@@ -110,8 +110,7 @@ export async function iniciarSesion(nombreUsuario, contrasena) {
     'No se pudo iniciar sesión. Verifica tus datos.'
   )
 
-  const usuario =
-    datos.user || datos.usuario || datos.data?.user || datos.data?.usuario || datos.data
+  const usuario = datos.data?.user || datos.data?.usuario || datos.data
   const rolRecibido = usuario?.rol || usuario?.role
   const rolNormalizado = String(rolRecibido || '').trim().toUpperCase()
 
@@ -121,7 +120,7 @@ export async function iniciarSesion(nombreUsuario, contrasena) {
     )
   }
 
-  if (typeof datos.token !== 'string' || !datos.token) {
+  if (typeof datos.data.token !== 'string' || !datos.data.token) {
     throw new Error(
       'El servidor respondió, pero no se encontró el token de autenticación.'
     )
@@ -137,7 +136,7 @@ export async function iniciarSesion(nombreUsuario, contrasena) {
         : rolNormalizado === 'DELIVERY_PERSON'
           ? 'REPARTIDOR'
           : rolNormalizado,
-    token: datos.token,
+    token: datos.data.token,
   }
 }
 
