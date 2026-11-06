@@ -29,7 +29,7 @@ app.get("/", (req, res) => {
 
 // Ruta autenticación
 app.use("/api/auth", authRoutes);
-app.use("/api/auth/register", registerRoutes);
+app.use("/api/auth", registerRoutes);
 
 // Endpoint de salud
 app.get("/health", (req, res) => {
