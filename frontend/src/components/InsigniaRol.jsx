@@ -8,6 +8,10 @@ const ROLES = {
     etiqueta: 'Panel del repartidor',
     estilo: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400',
   },
+  ADMIN: {
+    etiqueta: 'Panel administrativo',
+    estilo: 'border-purple-500/20 bg-purple-500/10 text-purple-400',
+  },
 }
 
 function InsigniaRol({ rol }) {

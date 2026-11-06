@@ -24,13 +24,23 @@ function FormularioRegistro({ alRegistrar }) {
       return
     }
 
+    if (usuario.length < 3 || usuario.length > 50) {
+      setError('El nombre debe tener entre 3 y 50 caracteres.')
+      return
+    }
+
     if (contrasena !== confirmacion) {
       setError('Las contraseñas no coinciden.')
       return
     }
 
-    if (contrasena.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.')
+    if (contrasena.length < 8) {
+      setError('La contraseña debe tener al menos 8 caracteres.')
+      return
+    }
+
+    if (new TextEncoder().encode(contrasena).length > 72) {
+      setError('La contraseña no puede superar 72 bytes.')
       return
     }
 
@@ -49,7 +59,7 @@ function FormularioRegistro({ alRegistrar }) {
         rol,
       })
 
-      alRegistrar(correoNormalizado)
+      alRegistrar(usuario)
     } catch (err) {
       setError(err.message || 'No se pudo crear la cuenta. Intenta nuevamente.')
     } finally {
@@ -67,6 +77,8 @@ function FormularioRegistro({ alRegistrar }) {
         onChange={(e) => setNombre(e.target.value)}
         placeholder="Ingresa tu nombre"
         autoComplete="name"
+        minLength={3}
+        maxLength={50}
         required
       />
 
@@ -87,9 +99,9 @@ function FormularioRegistro({ alRegistrar }) {
         type="password"
         value={contrasena}
         onChange={(e) => setContrasena(e.target.value)}
-        placeholder="Mínimo 6 caracteres"
+        placeholder="Mínimo 8 caracteres"
         autoComplete="new-password"
-        minLength={6}
+        minLength={8}
         required
       />
 

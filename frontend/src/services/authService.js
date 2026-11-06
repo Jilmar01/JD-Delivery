@@ -54,8 +54,16 @@ export async function registrarUsuario({ usuario, correo, contrasena, rol }) {
     throw new Error('Completa todos los campos.')
   }
 
-  if (contrasena.length < 6) {
-    throw new Error('La contraseña debe tener al menos 6 caracteres.')
+  if (contrasena.length < 8) {
+    throw new Error('La contraseña debe tener al menos 8 caracteres.')
+  }
+
+  if (new TextEncoder().encode(contrasena).length > 72) {
+    throw new Error('La contraseña no puede superar 72 bytes.')
+  }
+
+  if (usuario.trim().length < 3 || usuario.trim().length > 50) {
+    throw new Error('El nombre debe tener entre 3 y 50 caracteres.')
   }
 
   if (!['CLIENTE', 'REPARTIDOR'].includes(rol)) {
@@ -81,9 +89,9 @@ export async function registrarUsuario({ usuario, correo, contrasena, rol }) {
   )
 }
 
-export async function iniciarSesion(correo, contrasena) {
-  if (!correo || !contrasena) {
-    throw new Error('Ingresa tu correo y contraseña.')
+export async function iniciarSesion(nombreUsuario, contrasena) {
+  if (!nombreUsuario || !contrasena) {
+    throw new Error('Ingresa tu usuario y contraseña.')
   }
 
   const respuesta = await solicitarAuth('login', {
@@ -92,7 +100,7 @@ export async function iniciarSesion(correo, contrasena) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      email: correo,
+      username: nombreUsuario,
       password: contrasena,
     }),
   })
@@ -130,5 +138,24 @@ export async function iniciarSesion(correo, contrasena) {
           ? 'REPARTIDOR'
           : rolNormalizado,
     token: datos.token,
+  }
+}
+
+const AUTH_USERS_URL = `${AUTH_API_URL}/api/auth/users`
+
+/** Nombres de usuario por id (solo administradores): { 1: 'Dario', 2: 'Luis' } */
+export async function obtenerNombresUsuarios(ids, token) {
+  const unicos = [...new Set(ids.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
+  if (unicos.length === 0 || !token) return {}
+
+  try {
+    const respuesta = await fetch(`${AUTH_USERS_URL}?ids=${unicos.join(',')}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!respuesta.ok) return {}
+    const { data } = await respuesta.json()
+    return Object.fromEntries(data.map((u) => [u.id, u.username]))
+  } catch {
+    return {}
   }
 }

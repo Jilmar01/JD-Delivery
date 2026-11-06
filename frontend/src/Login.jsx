@@ -4,10 +4,10 @@ import { iniciarSesion as autenticarUsuario } from './services/authService'
 import CampoFormulario from './components/CampoFormulario'
 import FormularioRegistro from './components/FormularioRegistro'
 
-function Login({ alIniciarSesion }) {
+function Login({ alIniciarSesion, avisoSesion }) {
   const [modo, setModo] = useState('login')
   const [aviso, setAviso] = useState('')
-  const [correo, setCorreo] = useState('')
+  const [nombreUsuario, setNombreUsuario] = useState('')
   const [contrasena, setContrasena] = useState('')
   const [mostrarContrasena, setMostrarContrasena] = useState(false)
   const [error, setError] = useState('')
@@ -19,10 +19,7 @@ function Login({ alIniciarSesion }) {
     setCargando(true)
 
     try {
-      const usuario = await autenticarUsuario(
-        correo.trim().toLowerCase(),
-        contrasena
-      )
+      const usuario = await autenticarUsuario(nombreUsuario.trim(), contrasena)
 
       alIniciarSesion(usuario)
     } catch (err) {
@@ -40,8 +37,8 @@ function Login({ alIniciarSesion }) {
     setAviso('')
   }
 
-  function alRegistrar(correoRegistrado) {
-    setCorreo(correoRegistrado)
+  function alRegistrar(usuarioRegistrado) {
+    setNombreUsuario(usuarioRegistrado)
     setContrasena('')
     setModo('login')
     setError('')
@@ -138,12 +135,12 @@ function Login({ alIniciarSesion }) {
               <>
                 <form onSubmit={iniciarSesion} className="space-y-5">
                   <CampoFormulario
-                    id="correo"
-                    etiqueta="Correo electrónico"
-                    type="email"
-                    value={correo}
-                    onChange={(e) => setCorreo(e.target.value)}
-                    placeholder="nombre@ejemplo.com"
+                    id="usuario"
+                    etiqueta="Usuario"
+                    type="text"
+                    value={nombreUsuario}
+                    onChange={(e) => setNombreUsuario(e.target.value)}
+                    placeholder="Tu nombre de usuario"
                     autoComplete="username"
                     icono={
                       <svg
@@ -155,11 +152,11 @@ function Login({ alIniciarSesion }) {
                         className="h-5 w-5"
                         aria-hidden="true"
                       >
-                        <rect x="3" y="5" width="18" height="14" rx="2" />
+                        <circle cx="12" cy="8" r="4" />
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                          d="m4 7 8 6 8-6"
+                          d="M4 20c0-4 3.6-6 8-6s8 2 8 6"
                         />
                       </svg>
                     }
@@ -249,6 +246,15 @@ function Login({ alIniciarSesion }) {
                     }
                     required
                   />
+
+                  {avisoSesion && (
+                    <p
+                      role="alert"
+                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-700"
+                    >
+                      {avisoSesion}
+                    </p>
+                  )}
 
                   {aviso && (
                     <p

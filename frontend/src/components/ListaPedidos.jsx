@@ -1,27 +1,46 @@
-
+import { useEffect, useState } from 'react'
+import TiempoEntrega from './TiempoEntrega'
+import ProductosPedido from './ProductosPedido'
 import {
   etiquetaEstado,
   ESTADOS_PROGRESO_PEDIDO,
 } from '../utils/estados'
 
 const ESTILOS_ESTADO = {
-  PENDIENTE: 'border-amber-200 bg-amber-50 text-amber-800',
-  ASIGNADO: 'border-blue-200 bg-blue-50 text-blue-800',
-  EN_CAMINO: 'border-violet-200 bg-violet-50 text-violet-800',
-  ENTREGADO: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  CANCELADO: 'border-red-200 bg-red-50 text-red-800',
+  PENDING: 'border-amber-200 bg-amber-50 text-amber-800',
+  CONFIRMED: 'border-blue-200 bg-blue-50 text-blue-800',
+  PREPARING: 'border-indigo-200 bg-indigo-50 text-indigo-800',
+  IN_TRANSIT: 'border-violet-200 bg-violet-50 text-violet-800',
+  DELIVERED: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  CANCELLED: 'border-red-200 bg-red-50 text-red-800',
 }
 
-function ListaPedidos({ pedidos }) {
+function ListaPedidos({
+  pedidos,
+  titulo = 'Pedidos registrados',
+  subtitulo = 'Consulta tus pedidos y revisa su estado actual.',
+  mensajeVacio = 'Todavía no tienes pedidos registrados.',
+  detalleVacio = 'Utiliza el formulario para crear tu primer pedido.',
+}) {
+  const [ahora, setAhora] = useState(() => Date.now())
+  const hayEnCurso = pedidos.some((p) => p.asignadoEn && p.estado !== 'DELIVERED')
+
+  // El contador avanza cada segundo mientras haya una entrega en curso
+  useEffect(() => {
+    if (!hayEnCurso) return undefined
+    const reloj = setInterval(() => setAhora(Date.now()), 1000)
+    return () => clearInterval(reloj)
+  }, [hayEnCurso])
+
   return (
     <section className="rounded-xl bg-transparent">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-slate-800">
-            Pedidos registrados
+            {titulo}
           </h3>
           <p className="mt-1.5 text-sm text-slate-500">
-            Consulta tus pedidos y revisa su estado actual.
+            {subtitulo}
           </p>
         </div>
 
@@ -50,10 +69,10 @@ function ListaPedidos({ pedidos }) {
           </div>
 
           <p className="mt-4 font-semibold text-slate-800">
-            Todavía no tienes pedidos registrados.
+            {mensajeVacio}
           </p>
           <p className="mt-2 text-sm text-slate-500">
-            Utiliza el formulario para crear tu primer pedido.
+            {detalleVacio}
           </p>
         </div>
       ) : (
@@ -69,7 +88,7 @@ function ListaPedidos({ pedidos }) {
                     Identificador del pedido
                   </p>
                   <h3 className="mt-1.5 text-lg font-bold tracking-tight text-slate-950">
-                    PED-{String(pedido.id).slice(-6)}
+                    {pedido.id ?? 'ID no disponible'}
                   </h3>
                 </div>
 
@@ -89,7 +108,7 @@ function ListaPedidos({ pedidos }) {
                     Cliente
                   </p>
                   <p className="mt-1.5 break-words text-sm font-medium text-slate-800">
-                    {pedido.cliente}
+                    {pedido.cliente || 'No disponible'}
                   </p>
                 </div>
 
@@ -113,11 +132,11 @@ function ListaPedidos({ pedidos }) {
 
                 <div className="sm:col-span-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Descripción del pedido
+                    Productos
                   </p>
-                  <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">
-                    {pedido.descripcion}
-                  </p>
+                  <div className="mt-2">
+                    <ProductosPedido notas={pedido.descripcion} />
+                  </div>
                 </div>
               </div>
 
@@ -127,7 +146,7 @@ function ListaPedidos({ pedidos }) {
                 </h4>
                 <ol
                   aria-label={`Progreso del pedido: ${etiquetaEstado(pedido.estado)}`}
-                  className="mt-4 grid grid-cols-4 gap-2"
+                  className="mt-4 grid grid-cols-5 gap-2"
                 >
                   {ESTADOS_PROGRESO_PEDIDO.map((estado, indice) => {
                     const indiceActual =
@@ -163,7 +182,7 @@ function ListaPedidos({ pedidos }) {
                     )
                   })}
                 </ol>
-                {pedido.estado === 'CANCELADO' ? (
+                {pedido.estado === 'CANCELLED' ? (
                   <p className="mt-3 text-sm leading-6 text-red-700">
                     Este pedido está cancelado; no avanzará por las etapas de
                     entrega.
@@ -176,7 +195,7 @@ function ListaPedidos({ pedidos }) {
                         {etiquetaEstado(pedido.estado)}
                       </span>.
                     </p>
-                    {pedido.estado === 'EN_CAMINO' && (
+                    {pedido.estado === 'IN_TRANSIT' && (
                       <p className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
                         El repartidor inició la entrega.
                       </p>
@@ -188,7 +207,8 @@ function ListaPedidos({ pedidos }) {
                     visual no está disponible para este estado.
                   </p>
                 )}
-                <p className="mt-1 text-xs leading-5 text-slate-500">
+                <TiempoEntrega pedido={pedido} ahora={ahora} />
+                <p className="mt-3 text-xs leading-5 text-slate-500">
                   Estado informativo; no hay seguimiento GPS en tiempo real.
                 </p>
               </div>

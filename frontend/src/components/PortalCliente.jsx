@@ -2,154 +2,156 @@
 import { useEffect, useState } from 'react'
 import FormularioPedido from './FormularioPedido'
 import ListaPedidos from './ListaPedidos'
-import {
-  obtenerPedidosCliente,
-  crearPedido as guardarPedido,
-} from '../services/pedidosService'
+import SeguimientoPedido from './SeguimientoPedido'
+import PedidoEnCurso from './PedidoEnCurso'
+import ModalPago from './ModalPago'
+import { agregarTiemposDeEntrega } from '../services/entregasService'
+import { cancelarPedido, crearPedido, obtenerPedidosCliente } from '../services/pedidosService'
+import { CATEGORIAS, COMIDAS_DEMO, formatoMoneda } from '../utils/catalogo'
 import pizza from '../assets/images/pizza.jpg'
-import hamburguesa from '../assets/images/hamburguesa.jpg'
-import sushi from '../assets/images/sushi.jpg'
-import pollo from '../assets/images/pollo.jpg'
-import ensalada from '../assets/images/ensalada.jpg'
 
-const CATEGORIAS_DEMO = [
-  { nombre: 'Restaurantes', icono: 'restaurante', imagen: hamburguesa },
-  { nombre: 'Súper', icono: 'super', imagen: ensalada },
-  { nombre: 'Farmacias', icono: 'farmacia' },
-  { nombre: 'Bebidas', icono: 'bebidas' },
-  { nombre: 'Tiendas', icono: 'tiendas' },
-  { nombre: 'Mascotas', icono: 'mascotas' },
-]
-
-const COMIDAS_DEMO = [
-  { nombre: 'Pizza', imagen: pizza, alt: 'Fotografía de referencia de pizza' },
-  {
-    nombre: 'Hamburguesa',
-    imagen: hamburguesa,
-    alt: 'Fotografía de referencia de hamburguesa',
-  },
-  { nombre: 'Sushi', imagen: sushi, alt: 'Fotografía de referencia de sushi' },
-  { nombre: 'Pollo', imagen: pollo, alt: 'Fotografía de referencia de pollo' },
-  {
-    nombre: 'Ensalada',
-    imagen: ensalada,
-    alt: 'Fotografía de referencia de ensalada',
-  },
-]
-
-function IconoCategoria({ tipo }) {
-  const iconos = {
-    restaurante: (
-      <>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v7m-3-7v4a3 3 0 0 0 6 0V3m-3 7v11M16 3v18m0-18c3 2 4 5 4 8h-4" />
-      </>
-    ),
-    super: (
-      <>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 1.9-1.4L21 8H6" />
-        <circle cx="10" cy="20" r="1" />
-        <circle cx="18" cy="20" r="1" />
-      </>
-    ),
-    farmacia: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path strokeLinecap="round" d="M12 7v10M7 12h10" />
-      </>
-    ),
-    bebidas: (
-      <>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 4h12l-1 17H7L6 4Zm3 0V2h6v2m-7 5h10" />
-      </>
-    ),
-    tiendas: (
-      <>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 9h16l-1-5H5L4 9Zm1 0v11h14V9m-9 11v-6h4v6" />
-        <path strokeLinecap="round" d="M4 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0" />
-      </>
-    ),
-    mascotas: (
-      <>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M8 12c-2 0-4 2-4 4 0 2 2 3 4 2l2-1h4l2 1c2 1 4 0 4-2 0-2-2-4-4-4-1 0-2 1-4 1s-3-1-4-1Z" />
-        <circle cx="6" cy="8" r="1.5" />
-        <circle cx="10" cy="6" r="1.5" />
-        <circle cx="14" cy="6" r="1.5" />
-        <circle cx="18" cy="8" r="1.5" />
-      </>
-    ),
-  }
-
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      className="h-6 w-6"
-      aria-hidden="true"
-    >
-      {iconos[tipo]}
-    </svg>
-  )
-}
-
-function PortalCliente({ usuario }) {
+function PortalCliente({ usuario, alCerrarSesion }) {
   const [pedidos, setPedidos] = useState([])
-  const [cliente, setCliente] = useState(usuario.nombre || '')
+  const [cantidadesCarrito, setCantidadesCarrito] = useState({})
   const [direccion, setDireccion] = useState('')
-  const [descripcion, setDescripcion] = useState('')
-  const [ubicacionPendiente, setUbicacionPendiente] = useState(null)
-  const [ubicacionConfirmada, setUbicacionConfirmada] = useState(null)
-  const [mensaje, setMensaje] = useState('')
+  const [ubicacion, setUbicacion] = useState(null)
+  const [enviando, setEnviando] = useState(false)
+  const [seguimiento, setSeguimiento] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
+  const [version, setVersion] = useState(0)
+  const [pestana, setPestana] = useState('inicio')
+  const [categoriaActiva, setCategoriaActiva] = useState('todas')
+  const [pagoAbierto, setPagoAbierto] = useState(false)
+  const [errorPago, setErrorPago] = useState('')
+  const customerId = String(usuario.id ?? '')
+  const sinSesion = !usuario.token || !customerId
 
+  function cambiarCantidad(comida, cambio) {
+    setError('')
+    setCantidadesCarrito((cantidades) => {
+      const cantidadActual = cantidades[comida.idLocal] || 0
+      const nuevaCantidad = Math.max(0, cantidadActual + cambio)
+
+      if (nuevaCantidad === 0) {
+        const restantes = { ...cantidades }
+        delete restantes[comida.idLocal]
+        return restantes
+      }
+
+      return { ...cantidades, [comida.idLocal]: nuevaCantidad }
+    })
+  }
+
+  const productosSeleccionados = COMIDAS_DEMO
+    .map((comida) => ({
+      ...comida,
+      cantidad: cantidadesCarrito[comida.idLocal] || 0,
+    }))
+    .filter((comida) => comida.cantidad > 0)
+  const totalCarritoCentavos = productosSeleccionados.reduce(
+    (total, comida) =>
+      total + Math.round(comida.precioDemo * 100) * comida.cantidad,
+    0
+  )
+
+  // Refresca los pedidos cada 5 s para ver cuándo lo asignan y lo entregan
   useEffect(() => {
-    async function cargarPedidos() {
+    const refresco = setInterval(() => setVersion((v) => v + 1), 5000)
+    return () => clearInterval(refresco)
+  }, [])
+
+  // Cada cambio de "version" vuelve a consultar los pedidos (p. ej. tras crear uno)
+  useEffect(() => {
+    let activo = true
+
+    async function cargar() {
+      if (usuario.modoDemostracion || sinSesion) return
+
       try {
-        const datos = await obtenerPedidosCliente(usuario.correo, {
-          demo: usuario.modoDemostracion,
-        })
-        setPedidos(datos)
-      } catch {
-        setError('No se pudieron cargar los pedidos.')
-      } finally {
-        setCargando(false)
+        const datos = await obtenerPedidosCliente(customerId, usuario.token)
+        // Si delivery-service no responde, se muestran los pedidos sin tiempos
+        const conTiempos = await agregarTiemposDeEntrega(datos, usuario.token).catch(() => datos)
+        if (activo) setPedidos(conTiempos)
+      } catch (error) {
+        if (!activo) return
+        setError(error.message || 'No se pudieron cargar los pedidos.')
+        if (error.status === 401) alCerrarSesion(error.message)
       }
     }
 
-    cargarPedidos()
-  }, [usuario.correo, usuario.modoDemostracion])
+    cargar().finally(() => {
+      if (activo) setCargando(false)
+    })
+    return () => {
+      activo = false
+    }
+  }, [alCerrarSesion, customerId, sinSesion, usuario.modoDemostracion, usuario.token, version])
 
-  async function crearPedido(e) {
-    e.preventDefault()
-    setMensaje('')
+  // Antes de abrir la ventana de pago se comprueba que haya dirección y productos
+  function abrirPago() {
     setError('')
+    setErrorPago('')
 
-    if (!ubicacionConfirmada) {
-      setError('Confirma el punto de entrega en el mapa antes de registrar el pedido.')
+    if (!ubicacion || !direccion.trim() || direccion.startsWith('Buscando')) {
+      setError('Elige el punto de entrega en el mapa y espera a que se complete la dirección.')
       return
     }
 
-    try {
-      const nuevoPedido = await guardarPedido({
-        cliente,
-        direccion,
-        descripcion,
-        lat: ubicacionConfirmada.lat,
-        lng: ubicacionConfirmada.lng,
-      }, usuario.correo, { demo: usuario.modoDemostracion })
+    if (productosSeleccionados.length === 0) {
+      setError('Agrega al menos un producto al carrito.')
+      return
+    }
 
-      setPedidos((anteriores) => [...anteriores, nuevoPedido])
-      setCliente(usuario.nombre || '')
+    setPagoAbierto(true)
+  }
+
+  async function pagarPedido() {
+    setErrorPago('')
+    setEnviando(true)
+    try {
+      const { pedido, oferta } = await crearPedido(
+        {
+          customerId,
+          direccion: direccion.trim(),
+          lat: ubicacion.lat,
+          lng: ubicacion.lng,
+          total: totalCarritoCentavos / 100,
+          notas: productosSeleccionados
+            .map((comida) => `${comida.nombre} x${comida.cantidad}`)
+            .join(', '),
+        },
+        usuario.token
+      )
+      setSeguimiento({ pedido, oferta })
+      setCantidadesCarrito({})
       setDireccion('')
-      setDescripcion('')
-      setUbicacionPendiente(null)
-      setUbicacionConfirmada(null)
-      setMensaje('¡Pedido registrado correctamente!')
-    } catch (err) {
-      setError(err.message || 'No se pudo registrar el pedido. Intenta nuevamente.')
+      setUbicacion(null)
+      setPagoAbierto(false)
+      setVersion((v) => v + 1)
+    } catch (error) {
+      setErrorPago(error.message || 'No se pudo registrar el pedido.')
+      if (error.status === 401) alCerrarSesion(error.message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  const productosVisibles =
+    categoriaActiva === 'todas'
+      ? COMIDAS_DEMO
+      : COMIDAS_DEMO.filter((comida) => comida.categoria === categoriaActiva)
+  const categoriaElegida = CATEGORIAS.find((c) => c.id === categoriaActiva)
+
+  const enProgreso = pedidos.filter((p) => p.estado !== 'DELIVERED' && p.estado !== 'CANCELLED')
+  const historial = pedidos.filter((p) => p.estado === 'DELIVERED' || p.estado === 'CANCELLED')
+
+  async function cancelarDesdeTarjeta(pedido) {
+    try {
+      await cancelarPedido(pedido.id, usuario.token)
+      setVersion((v) => v + 1)
+    } catch (error) {
+      setError(error.message || 'No se pudo cancelar el pedido.')
     }
   }
 
@@ -195,69 +197,189 @@ function PortalCliente({ usuario }) {
           </div>
         </section>
 
-        <section aria-labelledby="categorias-titulo">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <h2
-                id="categorias-titulo"
-                className="text-xl font-bold tracking-tight text-slate-950 sm:text-2xl"
-              >
-                Explora por categoría
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Vista previa: el catálogo todavía no está conectado.
-              </p>
+        <nav
+          role="tablist"
+          aria-label="Secciones del portal"
+          className="flex w-full gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm shadow-slate-200/60 sm:w-fit"
+        >
+          {[
+            { id: 'inicio', texto: 'Pedir' },
+            { id: 'historial', texto: `Historial${historial.length ? ` (${historial.length})` : ''}` },
+          ].map((opcion) => (
+            <button
+              key={opcion.id}
+              type="button"
+              role="tab"
+              aria-selected={pestana === opcion.id}
+              onClick={() => setPestana(opcion.id)}
+              className={`flex-1 rounded-xl px-6 py-2.5 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-blue-600/15 sm:flex-none ${
+                pestana === opcion.id
+                  ? 'bg-blue-700 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {opcion.texto}
+            </button>
+          ))}
+        </nav>
+
+        {pestana === 'historial' ? (
+          <section
+            id="historial"
+            className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70"
+          >
+            <div className="p-5 sm:p-7">
+              {cargando ? (
+                <p className="text-sm text-slate-500">Cargando pedidos...</p>
+              ) : sinSesion ? (
+                <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  No hay una sesión autenticada para consultar pedidos.
+                </p>
+              ) : (
+                <ListaPedidos
+                  pedidos={historial}
+                  titulo="Historial de pedidos"
+                  subtitulo="Tus pedidos entregados y cancelados."
+                  mensajeVacio="Aún no tienes pedidos finalizados."
+                  detalleVacio="Cuando recibas o canceles un pedido aparecerá aquí."
+                />
+              )}
             </div>
-            <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-              Demostración
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {CATEGORIAS_DEMO.map((categoria) => (
-              <div
-                key={categoria.nombre}
-                className="group overflow-hidden rounded-2xl border border-slate-200 bg-white text-center shadow-sm shadow-slate-200/50 transition hover:-translate-y-0.5 hover:shadow-md"
+          </section>
+        ) : (
+          <>
+        <section aria-labelledby="progreso-titulo" className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
+                Ahora mismo
+              </p>
+              <h2
+                id="progreso-titulo"
+                className="mt-1 text-xl font-bold tracking-tight text-slate-950 sm:text-2xl"
               >
-                {categoria.imagen ? (
+                Tu pedido en progreso
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPestana('historial')}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-blue-800 shadow-sm transition hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-600/15"
+            >
+              Ver historial{historial.length ? ` (${historial.length})` : ''}
+            </button>
+          </div>
+
+          {enProgreso.length > 0 ? (
+            enProgreso.map((pedido) => (
+              <PedidoEnCurso
+                key={pedido.id}
+                pedido={pedido}
+                alVerBusqueda={(elegido) => setSeguimiento({ pedido: elegido, oferta: null })}
+                alCancelar={cancelarDesdeTarjeta}
+              />
+            ))
+          ) : (
+            <div className="flex flex-col items-center gap-4 rounded-3xl border border-dashed border-slate-300 bg-white p-6 text-center sm:flex-row sm:text-left">
+              <div className="flex -space-x-3">
+                {COMIDAS_DEMO.slice(0, 3).map((comida) => (
                   <img
-                    src={categoria.imagen}
+                    key={comida.idLocal}
+                    src={comida.imagen}
                     alt=""
-                    className="h-24 w-full object-cover transition duration-300 group-hover:scale-105 sm:h-28"
+                    className="h-16 w-16 rounded-2xl object-cover ring-4 ring-white"
                   />
-                ) : (
-                  <span className="flex h-24 items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 text-blue-700 sm:h-28">
-                    <IconoCategoria tipo={categoria.icono} />
-                  </span>
-                )}
-                <span className="block px-2 py-3 text-sm font-semibold text-slate-800">
-                  {categoria.nombre}
-                </span>
+                ))}
               </div>
-            ))}
+              <div>
+                <p className="font-semibold text-slate-900">
+                  {cargando ? 'Buscando tus pedidos…' : 'No tienes ningún pedido en progreso'}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Elige tu comida más abajo; tus pedidos anteriores están en la pestaña Historial.
+                </p>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section aria-labelledby="categorias-titulo" className="space-y-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
+              Todo el menú
+            </p>
+            <h2
+              id="categorias-titulo"
+              className="mt-1 text-xl font-bold tracking-tight text-slate-950 sm:text-2xl"
+            >
+              Explora por categoría
+            </h2>
+          </div>
+
+          <div
+            role="tablist"
+            aria-label="Categorías de comida"
+            className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-10"
+          >
+            {[{ id: 'todas', nombre: 'Todo' }, ...CATEGORIAS].map((categoria) => {
+              const activa = categoriaActiva === categoria.id
+              return (
+                <button
+                  key={categoria.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activa}
+                  onClick={() => setCategoriaActiva(categoria.id)}
+                  className={`group overflow-hidden rounded-2xl border bg-white text-center shadow-sm shadow-slate-200/50 transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-blue-600/15 ${
+                    activa ? 'border-blue-600 ring-2 ring-blue-600/20' : 'border-slate-200'
+                  }`}
+                >
+                  {categoria.imagen ? (
+                    <img
+                      src={categoria.imagen}
+                      alt=""
+                      loading="lazy"
+                      className="h-20 w-full object-cover transition duration-300 group-hover:scale-105 sm:h-24"
+                    />
+                  ) : (
+                    <span className="flex h-20 items-center justify-center bg-gradient-to-br from-[#0B2A50] to-[#1D4ED8] text-lg font-bold text-white sm:h-24">
+                      Todo
+                    </span>
+                  )}
+                  <span
+                    className={`block px-1.5 py-2.5 text-xs font-semibold leading-4 sm:text-sm ${
+                      activa ? 'text-blue-800' : 'text-slate-800'
+                    }`}
+                  >
+                    {categoria.nombre}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </section>
 
         <section aria-labelledby="inspiracion-titulo">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
-                Ideas para tu próximo pedido
-              </p>
               <h2
                 id="inspiracion-titulo"
-                className="mt-1 text-xl font-bold tracking-tight text-slate-950 sm:text-2xl"
+                className="text-xl font-bold tracking-tight text-slate-950 sm:text-2xl"
               >
-                Inspiración gastronómica
+                {categoriaElegida ? categoriaElegida.nombre : 'Todos los productos'}
               </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {productosVisibles.length} productos · agrega los que quieras a tu pedido
+              </p>
             </div>
             <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">
-              Solo demostración · no disponible para compra
+              Precios de muestra
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {COMIDAS_DEMO.map((comida) => (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {productosVisibles.map((comida) => (
               <article
-                key={comida.nombre}
+                key={comida.idLocal}
                 className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/50"
               >
                 <img
@@ -267,15 +389,79 @@ function PortalCliente({ usuario }) {
                   className="h-32 w-full object-cover sm:h-36"
                 />
                 <div className="p-3">
-                  <h3 className="text-sm font-semibold text-slate-800">
-                    {comida.nombre}
-                  </h3>
-                  <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                    Imagen de referencia
+                  <h3 className="text-sm font-semibold text-slate-800">{comida.nombre}</h3>
+                  <p className="mt-1 text-sm font-semibold text-blue-700">
+                    {formatoMoneda.format(comida.precioDemo)}
                   </p>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => cambiarCantidad(comida, -1)}
+                      disabled={!cantidadesCarrito[comida.idLocal]}
+                      aria-label={`Disminuir cantidad de ${comida.nombre}`}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-lg font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      −
+                    </button>
+                    <span
+                      aria-live="polite"
+                      aria-label={`Cantidad de ${comida.nombre}`}
+                      className="min-w-6 text-center text-sm font-semibold text-slate-800"
+                    >
+                      {cantidadesCarrito[comida.idLocal] || 0}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => cambiarCantidad(comida, 1)}
+                      aria-label={`Aumentar cantidad de ${comida.nombre}`}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-700 text-lg font-semibold text-white transition hover:bg-blue-800"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
               </article>
             ))}
+          </div>
+
+          <div
+            aria-live="polite"
+            className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/50 sm:p-6"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Tu carrito</h3>
+                <p className="mt-1 text-xs leading-5 text-amber-700">
+                  Productos y precios de muestra: el catálogo real aún no está conectado.
+                  Se envía el total del carrito con tu pedido.
+                </p>
+              </div>
+              <p className="text-lg font-bold text-slate-950">
+                Total: {formatoMoneda.format(totalCarritoCentavos / 100)}
+              </p>
+            </div>
+            {productosSeleccionados.length === 0 ? (
+              <p className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm text-slate-600">
+                Tu carrito está vacío. Agrega productos con el botón +.
+              </p>
+            ) : (
+              <ul className="mt-4 divide-y divide-slate-100">
+                {productosSeleccionados.map((comida) => (
+                  <li
+                    key={comida.idLocal}
+                    className="flex items-center gap-3 py-3 text-sm"
+                  >
+                    <img src={comida.imagen} alt="" className="h-12 w-12 rounded-xl object-cover" />
+                    <span className="min-w-0 flex-1 truncate font-medium text-slate-800">
+                      {comida.nombre} × {comida.cantidad}
+                    </span>
+                    <span className="font-semibold text-slate-700">
+                      {formatoMoneda.format((Math.round(comida.precioDemo * 100) * comida.cantidad) / 100)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </section>
 
@@ -340,9 +526,9 @@ function PortalCliente({ usuario }) {
                 </p>
               </div>
               <div className="rounded-2xl bg-amber-50 p-4">
-                <p className="text-xs font-medium text-amber-800">Pendientes</p>
+                <p className="text-xs font-medium text-amber-800">En progreso</p>
                 <p className="mt-1 text-2xl font-bold text-amber-700">
-                  {pedidos.filter((pedido) => pedido.estado === 'PENDIENTE').length}
+                  {enProgreso.length}
                 </p>
               </div>
             </div>
@@ -358,25 +544,18 @@ function PortalCliente({ usuario }) {
               Registrar un pedido
             </h2>
             <p className="mt-1.5 text-sm leading-5 text-slate-600">
-              Completa los datos para registrar una nueva entrega.
+              Elige dónde entregamos tu pedido; el pago es el último paso.
             </p>
           </div>
 
           <div className="p-5 sm:p-7">
             <FormularioPedido
-              cliente={cliente}
-              setCliente={setCliente}
               direccion={direccion}
               setDireccion={setDireccion}
-              descripcion={descripcion}
-              setDescripcion={setDescripcion}
-              ubicacionPendiente={ubicacionPendiente}
-              ubicacionConfirmada={ubicacionConfirmada}
-              setUbicacionPendiente={setUbicacionPendiente}
-              confirmarUbicacion={setUbicacionConfirmada}
-              crearPedido={crearPedido}
-              mensaje={mensaje}
-              setMensaje={setMensaje}
+              ubicacion={ubicacion}
+              setUbicacion={setUbicacion}
+              totalCentavos={totalCarritoCentavos}
+              alContinuar={abrirPago}
             />
           </div>
         </section>
@@ -390,30 +569,31 @@ function PortalCliente({ usuario }) {
           </p>
         )}
 
-        <section
-          id="mis-pedidos"
-          className="scroll-mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70"
-        >
-          <div className="border-b border-slate-100 px-5 py-5 sm:px-7">
-            <h2 className="text-lg font-bold tracking-tight text-slate-950 sm:text-xl">
-              Mis pedidos
-            </h2>
-            <p className="mt-1.5 text-sm leading-5 text-slate-600">
-              Consulta y revisa el estado de tus entregas.
-            </p>
-          </div>
-
-          <div className="p-5 sm:p-7">
-            {cargando ? (
-              <p className="text-sm text-slate-500">Cargando pedidos...</p>
-            ) : (
-              <ListaPedidos
-                pedidos={pedidos}
-              />
-            )}
-          </div>
-        </section>
+          </>
+        )}
       </div>
+
+      {pagoAbierto && (
+        <ModalPago
+          productos={productosSeleccionados}
+          totalCentavos={totalCarritoCentavos}
+          direccion={direccion}
+          enviando={enviando}
+          error={errorPago}
+          alCerrar={() => setPagoAbierto(false)}
+          alConfirmar={pagarPedido}
+        />
+      )}
+
+      {seguimiento && (
+        <SeguimientoPedido
+          pedido={seguimiento.pedido}
+          ofertaInicial={seguimiento.oferta}
+          token={usuario.token}
+          alCerrar={() => setSeguimiento(null)}
+          alCambiar={() => setVersion((v) => v + 1)}
+        />
+      )}
     </main>
   )
 }
