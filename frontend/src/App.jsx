@@ -193,7 +193,7 @@ function App() {
             : 'border-white/10 text-zinc-500'
         }`}
       >
-        © {new Date().getFullYear()} J-D Delivery · Sistema distribuido de gestión de pedidos y entregas
+        © {new Date().getFullYear()} J&D Delivery · Sistema distribuido de gestión de pedidos y entregas
       </footer>
     </div>
   )

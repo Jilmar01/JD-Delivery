@@ -33,6 +33,7 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/deliveries-api/, ''),
         },
       },
+      host: true
     },
   }
 })

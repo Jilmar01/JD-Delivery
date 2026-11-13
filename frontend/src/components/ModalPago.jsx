@@ -123,7 +123,7 @@ function ModalPago({ productos, totalCentavos, direccion, enviando, error, alCer
         <aside className="relative bg-gradient-to-br from-[#0B2A50] via-[#0B1D38] to-[#061226] p-6 text-white sm:p-8">
           <div className="absolute -left-10 -top-12 h-40 w-40 rounded-full bg-blue-500/15 blur-3xl" />
           <div className="relative">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-300">J-D Delivery</p>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-300">J&D Delivery</p>
             <h2 id="pago-titulo" className="mt-2 text-2xl font-bold tracking-tight">
               Confirma y paga
             </h2>

@@ -93,7 +93,7 @@ function Login({ alIniciarSesion, avisoSesion }) {
               </svg>
             </div>
             <p className="text-xl font-bold tracking-tight sm:text-2xl">
-              J-D <span className="text-blue-300">Delivery</span>
+              J&amp;D <span className="text-blue-300">Delivery</span>
             </p>
           </div>
 
@@ -117,7 +117,7 @@ function Login({ alIniciarSesion, avisoSesion }) {
           <div className="w-full max-w-md">
             <div className="mb-7">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
-                J-D Delivery
+                J&D Delivery
               </p>
               <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
                 {esRegistro ? 'Crea tu cuenta' : 'Bienvenido de nuevo'}
@@ -324,7 +324,7 @@ function Login({ alIniciarSesion, avisoSesion }) {
             </p>
 
             <p className="mt-8 text-center text-xs leading-5 text-slate-400">
-              © {new Date().getFullYear()} J-D Delivery
+              © {new Date().getFullYear()} J&D Delivery
             </p>
           </div>
         </div>

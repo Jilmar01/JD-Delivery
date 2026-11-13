@@ -14,17 +14,30 @@ const MENSAJES = {
 const ESTADOS_CANCELABLES = ['PENDING', 'CONFIRMED', 'PREPARING', 'IN_TRANSIT']
 
 /** El pedido que el cliente tiene en progreso, con sus productos, etapas y tiempo. */
-function PedidoEnCurso({ pedido, alVerBusqueda, alCancelar }) {
+function PedidoEnCurso({
+  pedido,
+  asignacion,
+  sinRepartidor,
+  alVerBusqueda,
+  alBuscarRepartidor,
+  alCancelar,
+}) {
   const [ahora, setAhora] = useState(() => Date.now())
   const [confirmando, setConfirmando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
+  const [buscandoDeNuevo, setBuscandoDeNuevo] = useState(false)
+  const [errorBusqueda, setErrorBusqueda] = useState('')
 
-  const enCurso = Boolean(pedido.asignadoEn) && pedido.estado !== 'DELIVERED'
-  const indiceActual = ESTADOS_PROGRESO_PEDIDO.indexOf(pedido.estado)
-  const pendiente = pedido.estado === 'PENDING'
+  const estadoVisible = pedido.estado || (asignacion ? 'CONFIRMED' : 'PENDING')
+  const asignadoEn = pedido.asignadoEn ?? (
+    asignacion?.assignedAt ? new Date(asignacion.assignedAt).getTime() : null
+  )
+  const enCurso = Boolean(asignadoEn) && estadoVisible !== 'DELIVERED'
+  const indiceActual = ESTADOS_PROGRESO_PEDIDO.indexOf(estadoVisible)
+  const pendiente = estadoVisible === 'PENDING'
   // El cliente puede cancelar mientras el pedido siga en progreso: si el repartidor ya lo aceptó
   // y no llega, es la salida para no quedar esperando indefinidamente
-  const cancelable = ESTADOS_CANCELABLES.includes(pedido.estado)
+  const cancelable = ESTADOS_CANCELABLES.includes(estadoVisible)
 
   useEffect(() => {
     if (!enCurso) return undefined
@@ -42,6 +55,18 @@ function PedidoEnCurso({ pedido, alVerBusqueda, alCancelar }) {
     }
   }
 
+  async function buscarDeNuevo() {
+    setBuscandoDeNuevo(true)
+    setErrorBusqueda('')
+    try {
+      await alBuscarRepartidor(pedido)
+    } catch (error) {
+      setErrorBusqueda(error.message || 'No se pudo reiniciar la búsqueda.')
+    } finally {
+      setBuscandoDeNuevo(false)
+    }
+  }
+
   return (
     <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
       <div className="bg-gradient-to-r from-[#0B2A50] to-[#0B1D38] px-5 py-4 text-white sm:px-7">
@@ -50,11 +75,15 @@ function PedidoEnCurso({ pedido, alVerBusqueda, alCancelar }) {
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">
               Pedido #{pedido.id}
             </p>
-            <p className="mt-1 text-sm text-blue-50/80">{MENSAJES[pedido.estado]}</p>
+            <p className="mt-1 text-sm text-blue-50/80">
+              {asignacion && estadoVisible === 'CONFIRMED'
+                ? `El repartidor #${asignacion.driverId} aceptó tu pedido.`
+                : MENSAJES[estadoVisible]}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <span className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold ring-1 ring-white/20">
-              {etiquetaEstado(pedido.estado)}
+              {etiquetaEstado(estadoVisible)}
             </span>
             <span className="text-lg font-bold">{formatoMoneda.format(pedido.total)}</span>
           </div>
@@ -71,9 +100,33 @@ function PedidoEnCurso({ pedido, alVerBusqueda, alCancelar }) {
           <p className="mt-1 break-words text-sm leading-6 text-slate-800">{pedido.direccion}</p>
         </div>
 
+        {sinRepartidor && pendiente && (
+          <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-semibold text-amber-900">
+              No encontramos un repartidor disponible para este pedido.
+            </p>
+            <button
+              type="button"
+              onClick={buscarDeNuevo}
+              disabled={buscandoDeNuevo}
+              className="mt-3 rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60"
+            >
+              {buscandoDeNuevo ? 'Buscando…' : 'Buscar repartidor de nuevo'}
+            </button>
+            {errorBusqueda && <p role="alert" className="mt-2 text-sm text-red-700">{errorBusqueda}</p>}
+          </div>
+        )}
+        {!sinRepartidor && pedido.searchStatus === 'OFFER_EXPIRED' && pendiente && (
+          <div role="status" className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+            <p className="text-sm font-semibold text-blue-900">
+              Una oferta venciÃ³. Seguimos buscando otro repartidor.
+            </p>
+          </div>
+        )}
+
         <div>
           <ol
-            aria-label={`Progreso del pedido: ${etiquetaEstado(pedido.estado)}`}
+            aria-label={`Progreso del pedido: ${etiquetaEstado(estadoVisible)}`}
             className="grid grid-cols-5 gap-2"
           >
             {ESTADOS_PROGRESO_PEDIDO.map((estado, indice) => {
@@ -98,12 +151,16 @@ function PedidoEnCurso({ pedido, alVerBusqueda, alCancelar }) {
               )
             })}
           </ol>
-          <TiempoEntrega pedido={pedido} ahora={ahora} />
+          <TiempoEntrega pedido={{ ...pedido, estado: estadoVisible, asignadoEn }} ahora={ahora} />
         </div>
 
         {cancelable && (
           <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
-            {pendiente ? (
+            {pendiente ? (sinRepartidor ? (
+              <p className="text-sm text-slate-600">
+                Puedes volver a buscar repartidor o cancelar el pedido.
+              </p>
+            ) : (
               <button
                 type="button"
                 onClick={() => alVerBusqueda(pedido)}
@@ -111,7 +168,7 @@ function PedidoEnCurso({ pedido, alVerBusqueda, alCancelar }) {
               >
                 Ver búsqueda de repartidor
               </button>
-            ) : (
+            )) : (
               <p className="text-sm text-slate-600">¿No te ha llegado tu pedido? Puedes cancelarlo.</p>
             )}
 

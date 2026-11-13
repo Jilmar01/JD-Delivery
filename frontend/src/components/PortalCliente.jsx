@@ -1,8 +1,8 @@
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { io } from 'socket.io-client'
 import FormularioPedido from './FormularioPedido'
 import ListaPedidos from './ListaPedidos'
-import SeguimientoPedido from './SeguimientoPedido'
 import PedidoEnCurso from './PedidoEnCurso'
 import ModalPago from './ModalPago'
 import { agregarTiemposDeEntrega } from '../services/entregasService'
@@ -17,6 +17,9 @@ function PortalCliente({ usuario, alCerrarSesion }) {
   const [ubicacion, setUbicacion] = useState(null)
   const [enviando, setEnviando] = useState(false)
   const [seguimiento, setSeguimiento] = useState(null)
+  const [asignaciones, setAsignaciones] = useState({})
+  const [estadosEntrega, setEstadosEntrega] = useState({})
+  const socketRef = useRef(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [version, setVersion] = useState(0)
@@ -24,6 +27,8 @@ function PortalCliente({ usuario, alCerrarSesion }) {
   const [categoriaActiva, setCategoriaActiva] = useState('todas')
   const [pagoAbierto, setPagoAbierto] = useState(false)
   const [errorPago, setErrorPago] = useState('')
+  const [reintentandoSeguimiento, setReintentandoSeguimiento] = useState(false)
+  const [errorReintentoSeguimiento, setErrorReintentoSeguimiento] = useState('')
   const customerId = String(usuario.id ?? '')
   const sinSesion = !usuario.token || !customerId
 
@@ -60,6 +65,127 @@ function PortalCliente({ usuario, alCerrarSesion }) {
     const refresco = setInterval(() => setVersion((v) => v + 1), 5000)
     return () => clearInterval(refresco)
   }, [])
+
+  useEffect(() => {
+    if (usuario.modoDemostracion || sinSesion) return undefined
+
+    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:4321', {
+      autoConnect: false,
+      auth: { token: usuario.token },
+      transports: ['polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
+    })
+    socketRef.current = socket;
+
+    socket.on('DRIVER_ASSIGNED', (assignment) => {
+      const orderId = Number(assignment?.orderId)
+      if (!Number.isSafeInteger(orderId) || orderId <= 0) return
+
+      setAsignaciones((actuales) => ({
+        ...actuales,
+        [orderId]: assignment,
+      }))
+      setEstadosEntrega((actuales) => ({
+        ...actuales,
+        [orderId]: {
+          ...actuales[orderId],
+          status: actuales[orderId]?.status === 'PENDING'
+            ? 'CONFIRMED'
+            : actuales[orderId]?.status,
+          searchStatus: 'ASSIGNED'
+        }
+      }))
+    })
+
+    socket.on('ORDER_STATUS_UPDATED', (update, acknowledge) => {
+      const orderId = Number(update?.orderId)
+      if (!Number.isSafeInteger(orderId) || orderId <= 0) {
+        acknowledge?.({ success: false })
+        return
+      }
+
+      setEstadosEntrega((actuales) => {
+        const estadoActual = actuales[orderId]?.searchStatus
+        if (
+          estadoActual === 'NO_DRIVERS_AVAILABLE' &&
+          update?.searchStatus === 'OFFER_EXPIRED'
+        ) {
+          return actuales
+        }
+
+        return { ...actuales, [orderId]: update }
+      })
+
+      if (update?.status === 'CANCELLED') {
+        setSeguimiento((actual) =>
+          Number(actual?.id) === orderId ? null : actual
+        )
+      }
+
+      acknowledge?.({ success: true })
+    })
+
+    socket.connect()
+
+    return () => {
+      socket.removeAllListeners()
+      socket.disconnect()
+      if (socketRef.current === socket) socketRef.current = null
+    }
+  }, [sinSesion, usuario.modoDemostracion, usuario.token])
+
+  // Recupera el aviso terminal por HTTP si la sesión Socket.IO se desconectó.
+  useEffect(() => {
+    if (usuario.modoDemostracion || sinSesion) return undefined
+
+    let activo = true
+    const socketHttpUrl = (import.meta.env.VITE_SOCKET_URL || 'http://localhost:4321')
+      .replace(/^ws:/, 'http:')
+      .replace(/^wss:/, 'https:')
+    const consultarAvisosPendientes = async () => {
+      const pendientes = pedidos.filter((pedido) =>
+        (pedido.estado === 'PENDING' || pedido.status === 'PENDING') &&
+        !asignaciones[Number(pedido.id)]
+      )
+
+      await Promise.all(pendientes.map(async (pedido) => {
+        try {
+          const response = await fetch(
+            `${socketHttpUrl}/api/customer/orders/${pedido.id}/search-status`,
+            { headers: { Authorization: `Bearer ${usuario.token}` } }
+          )
+          if (!response.ok) return
+
+          const result = await response.json()
+          const update = result?.data
+          if (!activo || !update?.searchStatus) return
+
+          setEstadosEntrega((actuales) => {
+            if (
+              actuales[Number(pedido.id)]?.searchStatus === 'NO_DRIVERS_AVAILABLE' &&
+              update.searchStatus === 'OFFER_EXPIRED'
+            ) return actuales
+
+            return { ...actuales, [Number(pedido.id)]: update }
+          })
+        } catch {
+          // El aviso también puede llegar por Socket.IO al reconectar.
+        }
+      }))
+    }
+
+    consultarAvisosPendientes()
+    const interval = setInterval(consultarAvisosPendientes, 2000)
+
+    return () => {
+      activo = false
+      clearInterval(interval)
+    }
+  }, [asignaciones, pedidos, sinSesion, usuario.modoDemostracion, usuario.token])
 
   // Cada cambio de "version" vuelve a consultar los pedidos (p. ej. tras crear uno)
   useEffect(() => {
@@ -110,7 +236,7 @@ function PortalCliente({ usuario, alCerrarSesion }) {
     setErrorPago('')
     setEnviando(true)
     try {
-      const { pedido, oferta } = await crearPedido(
+      const { pedido } = await crearPedido(
         {
           customerId,
           direccion: direccion.trim(),
@@ -123,7 +249,7 @@ function PortalCliente({ usuario, alCerrarSesion }) {
         },
         usuario.token
       )
-      setSeguimiento({ pedido, oferta })
+      setSeguimiento(pedido)
       setCantidadesCarrito({})
       setDireccion('')
       setUbicacion(null)
@@ -143,8 +269,46 @@ function PortalCliente({ usuario, alCerrarSesion }) {
       : COMIDAS_DEMO.filter((comida) => comida.categoria === categoriaActiva)
   const categoriaElegida = CATEGORIAS.find((c) => c.id === categoriaActiva)
 
-  const enProgreso = pedidos.filter((p) => p.estado !== 'DELIVERED' && p.estado !== 'CANCELLED')
-  const historial = pedidos.filter((p) => p.estado === 'DELIVERED' || p.estado === 'CANCELLED')
+  const pedidosVisibles = pedidos.map((pedido) => {
+    const orderId = Number(pedido.id)
+    const asignacion = asignaciones[orderId]
+    const actualizacion = estadosEntrega[orderId]
+
+    return {
+      ...pedido,
+      estado: pedido.estado === 'CANCELLED'
+        ? 'CANCELLED'
+        : asignacion && (!actualizacion?.status || actualizacion.status === 'PENDING')
+          ? 'CONFIRMED'
+          : actualizacion?.status || pedido.estado,
+      searchStatus: asignacion ? undefined : actualizacion?.searchStatus,
+      repartidorId: asignacion?.driverId ?? pedido.repartidorId,
+      asignadoEn: pedido.asignadoEn || (
+        asignacion?.assignedAt ? new Date(asignacion.assignedAt).getTime() : null
+      ),
+      iniciadoEn: actualizacion?.startedAt
+        ? new Date(actualizacion.startedAt).getTime()
+        : pedido.iniciadoEn,
+      entregadoEn: actualizacion?.deliveredAt
+        ? new Date(actualizacion.deliveredAt).getTime()
+        : pedido.entregadoEn,
+    }
+  })
+  const enProgreso = pedidosVisibles.filter((p) => p.estado !== 'DELIVERED' && p.estado !== 'CANCELLED')
+  const historial = pedidosVisibles.filter((p) => p.estado === 'DELIVERED' || p.estado === 'CANCELLED')
+  const asignacionSeguimiento = seguimiento
+    ? asignaciones[Number(seguimiento.id)]
+    : null
+  const seguimientoSinRepartidor = Boolean(
+    seguimiento &&
+    !asignacionSeguimiento &&
+    estadosEntrega[Number(seguimiento.id)]?.searchStatus === 'NO_DRIVERS_AVAILABLE'
+  )
+  const seguimientoOfertaExpirada = Boolean(
+    seguimiento &&
+    !asignacionSeguimiento &&
+    estadosEntrega[Number(seguimiento.id)]?.searchStatus === 'OFFER_EXPIRED'
+  )
 
   async function cancelarDesdeTarjeta(pedido) {
     try {
@@ -152,6 +316,56 @@ function PortalCliente({ usuario, alCerrarSesion }) {
       setVersion((v) => v + 1)
     } catch (error) {
       setError(error.message || 'No se pudo cancelar el pedido.')
+    }
+  }
+
+  function buscarRepartidorDeNuevo(pedido) {
+    const socket = socketRef.current
+    if (!socket?.connected) {
+      return Promise.reject(new Error('No hay conexión con el servidor en tiempo real.'))
+    }
+
+    return new Promise((resolve, reject) => {
+      socket.emit('RETRY_ORDER_SEARCH', { orderId: Number(pedido.id) }, (result) => {
+        if (!result?.success) {
+          reject(new Error(result?.message || 'No se pudo reiniciar la búsqueda.'))
+          return
+        }
+
+        setEstadosEntrega((actuales) => ({
+          ...actuales,
+          [Number(pedido.id)]: {
+            ...actuales[Number(pedido.id)],
+            status: 'PENDING',
+            searchStatus: 'SEARCHING'
+          }
+        }))
+        setError('')
+        resolve()
+      })
+    })
+  }
+
+  async function reintentarDesdeSeguimiento() {
+    setReintentandoSeguimiento(true)
+    setErrorReintentoSeguimiento('')
+    try {
+      await buscarRepartidorDeNuevo(seguimiento)
+    } catch (error) {
+      setErrorReintentoSeguimiento(error.message || 'No se pudo reiniciar la bÃºsqueda.')
+    } finally {
+      setReintentandoSeguimiento(false)
+    }
+  }
+
+  async function cancelarDesdeSeguimiento() {
+    setErrorReintentoSeguimiento('')
+    try {
+      await cancelarPedido(seguimiento.id, usuario.token)
+      setSeguimiento(null)
+      setVersion((v) => v + 1)
+    } catch (error) {
+      setErrorReintentoSeguimiento(error.message || 'No se pudo cancelar el pedido.')
     }
   }
 
@@ -170,7 +384,7 @@ function PortalCliente({ usuario, alCerrarSesion }) {
           <div className="absolute inset-0 z-10 bg-gradient-to-r from-[#07172D] via-[#07172D]/90 to-[#07172D]/30 sm:to-transparent" />
           <div className="relative z-20 flex min-h-[320px] flex-col justify-center p-6 sm:min-h-[350px] sm:p-10 lg:min-h-[390px] lg:p-14">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-300 sm:text-sm">
-              J-D Delivery
+              J&D Delivery
             </p>
             <h2 className="mt-3 max-w-xl text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
               Hola, {nombreCorto}.
@@ -275,7 +489,10 @@ function PortalCliente({ usuario, alCerrarSesion }) {
               <PedidoEnCurso
                 key={pedido.id}
                 pedido={pedido}
-                alVerBusqueda={(elegido) => setSeguimiento({ pedido: elegido, oferta: null })}
+                asignacion={asignaciones[Number(pedido.id)]}
+                sinRepartidor={pedido.searchStatus === 'NO_DRIVERS_AVAILABLE'}
+                alVerBusqueda={setSeguimiento}
+                alBuscarRepartidor={buscarRepartidorDeNuevo}
                 alCancelar={cancelarDesdeTarjeta}
               />
             ))
@@ -586,13 +803,98 @@ function PortalCliente({ usuario, alCerrarSesion }) {
       )}
 
       {seguimiento && (
-        <SeguimientoPedido
-          pedido={seguimiento.pedido}
-          ofertaInicial={seguimiento.oferta}
-          token={usuario.token}
-          alCerrar={() => setSeguimiento(null)}
-          alCambiar={() => setVersion((v) => v + 1)}
-        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="busqueda-repartidor-titulo"
+          className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-950/50 p-4"
+        >
+          <section className="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-2xl sm:p-8">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
+              Pedido #{seguimiento.id}
+            </p>
+            <h2
+              id="busqueda-repartidor-titulo"
+              className="mt-2 text-xl font-bold tracking-tight text-slate-950"
+            >
+              {asignacionSeguimiento
+                ? '¡Repartidor asignado!'
+                : seguimientoSinRepartidor
+                  ? 'No encontramos repartidor'
+                  : seguimientoOfertaExpirada
+                    ? 'Una oferta venció'
+                  : 'Buscando repartidor'}
+            </h2>
+            {asignacionSeguimiento ? (
+              <div
+                role="status"
+                className="mt-5 rounded-xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-900"
+              >
+                El repartidor #{asignacionSeguimiento.driverId} aceptó tu pedido.
+              </div>
+            ) : seguimientoSinRepartidor ? (
+              <div
+                role="status"
+                className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900"
+              >
+                No encontramos un repartidor que acepte tu pedido. Puedes volver a
+                buscar o cancelar el pedido.
+              </div>
+            ) : seguimientoOfertaExpirada ? (
+              <div
+                role="status"
+                className="mt-5 rounded-xl bg-blue-50 p-4 text-sm text-blue-900"
+              >
+                Una oferta venció. Seguimos buscando otro repartidor; si se agotan
+                las ofertas, aquí podrás buscar de nuevo o cancelar.
+              </div>
+            ) : (
+              <div
+                role="status"
+                className="mt-5 flex items-center justify-center gap-3 rounded-xl bg-blue-50 p-4 text-sm text-blue-900"
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-blue-300 border-t-blue-700"
+                />
+                <span>Estamos buscando un repartidor cercano para tu pedido.</span>
+              </div>
+            )}
+            {seguimientoSinRepartidor && (
+              <>
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={reintentarDesdeSeguimiento}
+                    disabled={reintentandoSeguimiento}
+                    className="rounded-xl bg-blue-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {reintentandoSeguimiento ? 'Buscando…' : 'Buscar de nuevo'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelarDesdeSeguimiento}
+                    className="rounded-xl border border-red-200 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+                  >
+                    Cancelar pedido
+                  </button>
+                </div>
+                {errorReintentoSeguimiento && (
+                  <p role="alert" className="mt-3 text-sm text-red-700">
+                    {errorReintentoSeguimiento}
+                  </p>
+                )}
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setSeguimiento(null)}
+              className="mt-5 w-full rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-300/40"
+            >
+              Cerrar
+            </button>
+          </section>
+        </div>
       )}
     </main>
   )

@@ -1,4 +1,4 @@
-# J-D Delivery frontend
+# J&D Delivery frontend
 
 ## Selección de ubicación con OpenStreetMap
 

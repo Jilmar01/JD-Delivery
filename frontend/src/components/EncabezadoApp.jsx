@@ -55,7 +55,7 @@ function EncabezadoApp({ usuario, alCerrarSesion }) {
 
           <div>
             <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-              J-D <span className="text-blue-500">Delivery</span>
+              J&amp;D <span className="text-blue-500">Delivery</span>
             </h1>
             <p
               className={`mt-1 text-xs text-zinc-400 sm:text-sm ${
