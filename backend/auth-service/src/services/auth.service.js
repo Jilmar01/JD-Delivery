@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../config/database.js";
+import { env } from "../config/env.js";
 import { HttpError } from "../utils/HttpError.js";
 
 const ROLES = ["CUSTOMER", "DELIVERY_PERSON"];
@@ -37,13 +38,9 @@ export const login = async ({ username, email, password } = {}) => {
     throw new HttpError("La cuenta está desactivada", 403);
   }
 
-  if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET no está configurado");
-  }
-
   const token = jwt.sign(
     { id: user.id, role: user.role },
-    process.env.JWT_SECRET,
+    env.jwtSecret,
     { expiresIn: "2h" }
   );
 

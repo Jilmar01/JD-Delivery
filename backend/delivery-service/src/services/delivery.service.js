@@ -37,7 +37,7 @@ export async function createDelivery(data) {
     typeof data.deliveryAddress !== "string" ||
     !data.deliveryAddress.trim()
   ) {
-    throw new Error("La dirección de entrega es obligatoria");
+    throw new HttpError("La dirección de entrega es obligatoria", 400);
   }
 
   const deliveryLat = Number(data.deliveryLat);
@@ -48,7 +48,7 @@ export async function createDelivery(data) {
     deliveryLat < -90 ||
     deliveryLat > 90
   ) {
-    throw new Error("La latitud debe estar entre -90 y 90");
+    throw new HttpError("La latitud debe estar entre -90 y 90", 400);
   }
 
   if (
@@ -56,7 +56,7 @@ export async function createDelivery(data) {
     deliveryLng < -180 ||
     deliveryLng > 180
   ) {
-    throw new Error("La longitud debe estar entre -180 y 180");
+    throw new HttpError("La longitud debe estar entre -180 y 180", 400);
   }
 
   return prisma.$transaction(async (tx) => {
@@ -65,9 +65,7 @@ export async function createDelivery(data) {
     });
 
     if (existingDelivery) {
-      const error = new Error("Este pedido ya tiene una entrega registrada");
-      error.statusCode = 409;
-      throw error;
+      throw new HttpError("Este pedido ya tiene una entrega registrada", 409);
     }
 
     return tx.delivery.create({
@@ -120,9 +118,7 @@ export async function getDeliveryById(id) {
   });
 
   if (!delivery) {
-    const error = new Error("Entrega no encontrada");
-    error.statusCode = 404;
-    throw error;
+    throw new HttpError("Entrega no encontrada", 404);
   }
 
   return delivery;
@@ -139,17 +135,14 @@ export async function assignCourier(id, courierId) {
     });
 
     if (!delivery) {
-      const error = new Error("Entrega no encontrada");
-      error.statusCode = 404;
-      throw error;
+      throw new HttpError("Entrega no encontrada", 404);
     }
 
     if (["DELIVERED", "CANCELLED", "IN_TRANSIT"].includes(delivery.status)) {
-      const error = new Error(
-        "No se puede cambiar el repartidor en el estado actual"
+      throw new HttpError(
+        "No se puede cambiar el repartidor en el estado actual",
+        409
       );
-      error.statusCode = 409;
-      throw error;
     }
 
     const updatedDelivery = await tx.delivery.update({
@@ -178,11 +171,11 @@ export async function updateDeliveryStatus(id, newStatus, notes) {
   const deliveryId = validatePositiveInteger(id, "id");
 
   if (typeof newStatus !== "string" || !VALID_STATUSES.includes(newStatus)) {
-    throw new Error("El estado de entrega no es válido");
+    throw new HttpError("El estado de entrega no es válido", 400);
   }
 
   if (notes !== undefined && notes !== null && typeof notes !== "string") {
-    throw new Error("Las notas deben ser un texto");
+    throw new HttpError("Las notas deben ser un texto", 400);
   }
 
   return prisma.$transaction(async (tx) => {
@@ -191,23 +184,18 @@ export async function updateDeliveryStatus(id, newStatus, notes) {
     });
 
     if (!delivery) {
-      const error = new Error("Entrega no encontrada");
-      error.statusCode = 404;
-      throw error;
+      throw new HttpError("Entrega no encontrada", 404);
     }
 
     if (delivery.status === newStatus) {
-      const error = new Error("La entrega ya tiene ese estado");
-      error.statusCode = 409;
-      throw error;
+      throw new HttpError("La entrega ya tiene ese estado", 409);
     }
 
     if (!STATUS_TRANSITIONS[delivery.status].includes(newStatus)) {
-      const error = new Error(
-        `No se permite cambiar de ${delivery.status} a ${newStatus}`
+      throw new HttpError(
+        `No se permite cambiar de ${delivery.status} a ${newStatus}`,
+        409
       );
-      error.statusCode = 409;
-      throw error;
     }
 
     const now = new Date();
@@ -265,9 +253,7 @@ export async function getDeliveryByOrder(orderId) {
   });
 
   if (!delivery) {
-    const error = new Error("No existe una entrega para este pedido");
-    error.statusCode = 404;
-    throw error;
+    throw new HttpError("No existe una entrega para este pedido", 404);
   }
 
   return delivery;
@@ -283,9 +269,7 @@ export async function getDeliveryHistory(id) {
   });
 
   if (!delivery) {
-    const error = new Error("Entrega no encontrada");
-    error.statusCode = 404;
-    throw error;
+    throw new HttpError("Entrega no encontrada", 404);
   }
 
   return prisma.deliveryHistory.findMany({
@@ -293,47 +277,3 @@ export async function getDeliveryHistory(id) {
     orderBy: { date: "asc" },
   });
 }
-
-// Comunicacion con el servidor TCP
-const connectAndFindCourier = (deliveryId, orderId, courierId) => {
-  const TCP_PORT = Number(process.env.TCP_PORT) || 12345;
-  const TCP_HOST = process.env.TCP_HOST || '127.0.0.1';
-
-  const client = new net.Socket();
-
-  // 1. Conectarse al servidor TCP
-  client.connect(TCP_PORT, TCP_HOST, () => {
-    console.log(`🔌 Cliente conectado al servidor TCP (${TCP_HOST}:${TCP_PORT})`);
-
-    // 2. Construir el payload según la estructura que espera tu servidor TCP
-    const payload = {
-      tipo: 'ASIGNAR_PEDIDO',
-      pedidoId: orderId,
-      repartidorId: courierId,
-      deliveryId: deliveryId
-    };
-
-    // 3. Enviar los datos convertidos a String Y CON EL \n AL FINAL
-    client.write(JSON.stringify(payload) + '\n');
-  });
-
-  // 4. Escuchar la respuesta devuelta por el servidor TCP
-  client.on('data', (data) => {
-    const respuesta = data.toString().trim();
-    console.log('📩 Respuesta del servidor TCP:', respuesta);
-
-    // Opcional: Cerrar la conexión una vez recibida la respuesta
-    client.end();
-  });
-
-  // 5. Manejo de errores para evitar que la aplicación se caiga
-  client.on('error', (err) => {
-    console.error('❌ Error en la conexión TCP:', err.message);
-  });
-
-  client.on('close', () => {
-    console.log('🔌 Conexión TCP cerrada');
-  });
-};
-
-connectAndFindCourier(1, 3);

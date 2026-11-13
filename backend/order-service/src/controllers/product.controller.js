@@ -1,21 +1,17 @@
 import * as productService from "../services/product.service.js"
-
-import {
-  successResponse,
-  errorResponse,
-} from "../utils/response.js";
+import { successResponse, errorResponse } from "../utils/response.js";
 
 const handleError = (res, error, operation) => {
   console.error(`${operation}:`, error);
 
-  const statusCode = error.statusCode || 500;
+  const statusCode = error.status || 500;
 
-  const message =
+  const msgError =
     statusCode >= 500
       ? "Error interno del servidor"
       : error.message;
 
-  return errorResponse(res, message, statusCode);
+  return errorResponse(res, operation, msgError, statusCode);
 };
 
 // POST /api/products

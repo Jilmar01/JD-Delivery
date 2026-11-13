@@ -6,10 +6,9 @@ const handleError = (res, error, operation) => {
 
   const statusCode = error.status || 500;
 
-  const msgError =
-    statusCode >= 500
-      ? "Error interno del servidor"
-      : error.message;
+  const msgError = error.status
+    ? error.message
+    : "Error interno del servidor";
 
   return errorResponse(res, operation, msgError, statusCode);
 };
@@ -32,8 +31,21 @@ export const createOrder = async (req, res) => {
 
 // GET /api/orders
 export const getAllOrders = async (req, res) => {
+  
+  const { customerId, status } = req.query;
+
+  let filters = {};
+
+  if(customerId) {
+    filters.customerId = customerId;
+  }
+
+  if(status){
+    filters.status = status;
+  }
+  
   try {
-    const orders = await orderService.getAllOrders();
+    const orders = await orderService.getAllOrders(filters);
 
     return successResponse(
       res,
@@ -69,11 +81,11 @@ export const getOrderById = async (req, res) => {
 // PATCH /api/orders/:id/status
 export const updateOrderStatus = async (req, res) => {
   try {
-    const { estado } = req.body;
+    const { status } = req.body;
 
     const order = await orderService.updateOrderStatus(
       req.params.id,
-      estado
+      status
     );
 
     return successResponse(
@@ -90,23 +102,47 @@ export const updateOrderStatus = async (req, res) => {
   }
 };
 
-// GET /api/orders/status
-export const getOrdersByStatus = async (req, res) => {
+// GET /api/orders/:id/offers
+export const getOffers = async (req, res) => {
   try {
-    const orders = await orderService.getOrdersByStatus(req.query.status);
+    const orderId = Number(req.params.id);
+    const offers = await orderService.getOffers(orderId);
 
     return successResponse(
       res,
-      "Pedidos consultados por estado correctamente",
-      orders,
+      "Offertas consultadas correctamente",
+      offers,
       200,
-      { total: orders.length }
+      { total: offers.length }
     );
   } catch (error) {
     return handleError(
       res,
       error,
-      "Error al consultar pedidos por estado"
+      "Error al consultar offertas de pedidos"
     );
   }
-};
+}
+
+// GET /api/orders/:id/search-delivery
+export const searchDelivery = async (req, res) => {
+  const orderId = Number(req.params.id);
+
+  try {
+    const delivery = await orderService.searchDelivery(orderId);
+
+    return successResponse(
+      res,
+      "Repartidor encontrado",
+      delivery,
+      200,
+      { total: orders.delivery }
+    );
+  } catch (error) {
+    return handleError(
+      res,
+      error,
+      "Error al encontrar repartidor"
+    );
+  }
+}

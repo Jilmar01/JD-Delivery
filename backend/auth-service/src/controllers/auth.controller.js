@@ -3,10 +3,14 @@ import { errorResponse, successResponse } from "../utils/response.js";
 
 const handleError = (res, error, operation) => {
   console.error(`${operation}:`, error);
-  const statusCode = error.status || 500;
-  const detail = statusCode >= 500 ? "Error interno del servidor" : error.message;
 
-  return errorResponse(res, operation, detail, statusCode);
+  const statusCode = error.status || 500;
+
+  const msgError = error.status
+    ? error.message
+    : "Error interno del servidor";
+
+  return errorResponse(res, operation, msgError, statusCode);
 };
 
 // POST /api/auth/login

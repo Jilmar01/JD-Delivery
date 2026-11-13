@@ -1,29 +1,26 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../config/database.js";
 import axios from "axios";
-
-class AppError extends Error {
-  constructor(message, statusCode = 500) {
-    super(message);
-    this.name = "AppError";
-    this.statusCode = statusCode;
-  }
-}
+import { HttpError } from "../utils/HttpError.js";
+import { createTcpClient } from "../server/tcp.client.js";
+import { env } from "../config/env.js";
 
 const transiciones = {
-  PENDIENTE: ["CONFIRMADO", "CANCELADO"],
-  CONFIRMADO: ["EN_PREPARACION", "CANCELADO"],
-  EN_PREPARACION: ["EN_CAMINO", "CANCELADO"],
-  EN_CAMINO: ["ENTREGADO"],
-  ENTREGADO: [],
-  CANCELADO: [],
+  PENDING: ["CONFIRMED", "CANCELLED"],
+  CONFIRMED: ["PREPARING", "CANCELLED"],
+  PREPARING: ["IN_TRANSIT", "CANCELLED"],
+  IN_TRANSIT: ["DELIVERED"],
+  DELIVERED: [],
+  CANCELLED: [],
 };
+
+const estadosValidos = Object.keys(transiciones);
 
 const validarId = (id) => {
   const numero = Number(id);
 
   if (!Number.isSafeInteger(numero) || numero <= 0) {
-    throw new AppError(
+    throw new HttpError(
       "El ID del pedido debe ser un entero positivo",
       400
     );
@@ -34,7 +31,7 @@ const validarId = (id) => {
 
 const validarItems = (items) => {
   if (items !== undefined && !Array.isArray(items)) {
-    throw new AppError(
+    throw new HttpError(
       "Los productos deben enviarse en un arreglo",
       400
     );
@@ -55,7 +52,7 @@ const validarItems = (items) => {
       item.unitPrice === null ||
       item.unitPrice === ""
     ) {
-      throw new AppError(
+      throw new HttpError(
         "Uno o más productos tienen datos inválidos",
         400
       );
@@ -64,7 +61,7 @@ const validarItems = (items) => {
     const unitPrice = Number(item.unitPrice);
 
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
-      throw new AppError(
+      throw new HttpError(
         "El precio unitario debe ser mayor que cero",
         400
       );
@@ -85,8 +82,6 @@ export const createOrder = async (orderData) => {
     items,
   } = orderData;
 
-  console.log(orderData);
-  
   if (
     typeof customerId !== "string" ||
     !customerId.trim() ||
@@ -98,7 +93,7 @@ export const createOrder = async (orderData) => {
     total === null ||
     total === ""
   ) {
-    throw new AppError(
+    throw new HttpError(
       "customerId, deliveryAddress, deliveryLat, deliveryLng y total son obligatorios",
       400
     );
@@ -109,19 +104,19 @@ export const createOrder = async (orderData) => {
   const totalNumber = Number(total);
 
   if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-    throw new AppError("La latitud debe estar entre -90 y 90", 400);
+    throw new HttpError("La latitud debe estar entre -90 y 90", 400);
   }
 
   if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
-    throw new AppError("La longitud debe estar entre -180 y 180", 400);
+    throw new HttpError("La longitud debe estar entre -180 y 180", 400);
   }
 
   if (!Number.isFinite(totalNumber) || totalNumber <= 0) {
-    throw new AppError("El total debe ser mayor que cero", 400);
+    throw new HttpError("El total debe ser mayor que cero", 400);
   }
 
   if (notes !== undefined && notes !== null && typeof notes !== "string") {
-    throw new AppError("Las notas deben ser un texto", 400);
+    throw new HttpError("Las notas deben ser un texto", 400);
   }
 
   const orderItems = validarItems(items);
@@ -136,7 +131,7 @@ export const createOrder = async (orderData) => {
     orderItems.length > 0 &&
     Math.abs(calculatedTotal - receivedTotal) > 1
   ) {
-    throw new AppError(
+    throw new HttpError(
       "El total no coincide con la suma de los productos",
       400
     );
@@ -181,7 +176,7 @@ export const createOrder = async (orderData) => {
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === "P2003") {
-        throw new AppError(
+        throw new HttpError(
           "El cliente o alguno de los productos no existe",
           400
         );
@@ -192,74 +187,39 @@ export const createOrder = async (orderData) => {
   }
 
   // 2. Solicitar la creación de la entrega
-  const deliveryServiceUrl = process.env.DELIVERY_SERVICE_URL;
-
-  if (!deliveryServiceUrl) {
-    return {
-      ...order,
-      delivery: {
-        success: false,
-        message: "Pedido creado, pero Delivery no está configurado",
-      },
-    };
-  }
-
+  // Notificar al socket-service para que busque repartidores para el pedido.
   try {
-    
-    const response = await axios.post(
-      `${deliveryServiceUrl}/api/deliveries`,
-      {
-        orderId: order.id,
-        deliveryAddress: order.deliveryAddress,
-        deliveryLat: order.deliveryLat,
-        deliveryLng: order.deliveryLng,
-      },
-      {
-        timeout: 5000,
-      }
-    );
+    const tcpClient = createTcpClient({
+      serviceUrl: env.socketServiceUrl,
+    });
 
-    return {
-      ...order,
-      delivery: response.data.data,
-    };
+    await tcpClient.sendMessage("NEW_ORDER", {
+      orderId: order.id,
+      deliveryAddress: order.deliveryAddress,
+      deliveryLat: Number(order.deliveryLat),
+      deliveryLng: Number(order.deliveryLng),
+    });
   } catch (error) {
-    console.error(
-      "Pedido creado, pero no se pudo crear la entrega:",
-      error.response?.data || error.message
-    );
-
-    return {
-      ...order,
-      delivery: {
-        success: false,
-        message: "Pedido creado, pero la entrega está pendiente de asignación",
-      },
-    };
+    console.error("Pedido creado, pero no se notificó al servidor TCP:", error.message);
   }
+ 
+  return order;
 };
 
 export const getAllOrders = async (filters = {}) => {
   const where = {};
 
   if (filters.status !== undefined) {
-    const estadosValidos = [
-      "PENDIENTE",
-      "CONFIRMADO",
-      "EN_PREPARACION",
-      "EN_CAMINO",
-      "ENTREGADO",
-      "CANCELADO",
-    ];
-
-    if (
-      typeof filters.status !== "string" ||
-      !estadosValidos.includes(filters.status.toUpperCase())
-    ) {
-      throw new AppError("El estado proporcionado no es válido", 400);
+    if (typeof filters.status !== "string") {
+      throw new HttpError("El estado proporcionado no es valido", 400);
     }
 
-    where.estado = filters.status.toUpperCase();
+    const status = filters.status.toUpperCase();
+    if (!estadosValidos.includes(status)) {
+      throw new HttpError("El estado proporcionado no es valido", 400);
+    }
+
+    where.status = status;
   }
 
   return prisma.order.findMany({
@@ -284,87 +244,97 @@ export const getOrderById = async (idParam) => {
   });
 
   if (!order) {
-    throw new AppError("Pedido no encontrado", 404);
+    throw new HttpError("Pedido no encontrado", 404);
   }
 
   return order;
 };
 
-export const updateOrderStatus = async (idParam, estado) => {
+
+export const updateOrderStatus = async (idParam, status) => {
   const id = validarId(idParam);
+  const nextStatus = typeof status === "string"
+    ? status.toUpperCase()
+    : status;
 
   if (
-    typeof estado !== "string" ||
-    !Object.prototype.hasOwnProperty.call(transiciones, estado)
+    typeof nextStatus !== "string" ||
+    !Object.prototype.hasOwnProperty.call(transiciones, nextStatus)
   ) {
-    throw new AppError(
-      "El estado proporcionado no es válido",
-      400
-    );
+    throw new HttpError("El estado proporcionado no es válido", 400);
   }
 
-  return prisma.$transaction(async (tx) => {
+  const updatedOrder = await prisma.$transaction(async (tx) => {
     const pedido = await tx.order.findUnique({
       where: { id },
     });
 
     if (!pedido) {
-      throw new AppError("Pedido no encontrado", 404);
+      throw new HttpError("Pedido no encontrado", 404);
     }
 
-    if (!transiciones[pedido.estado]) {
-      throw new AppError(
-        "El pedido tiene un estado no reconocido",
-        500
-      );
+    if (!transiciones[pedido.status]) {
+      throw new HttpError("El pedido tiene un estado no reconocido", 500);
     }
 
-    if (!transiciones[pedido.estado].includes(estado)) {
-      throw new AppError(
-        `No se permite cambiar de ${pedido.estado} a ${estado}`,
+    if (!transiciones[pedido.status].includes(nextStatus)) {
+      throw new HttpError(
+        `No se permite cambiar de ${pedido.status} a ${nextStatus}`,
         409
       );
     }
 
     return tx.order.update({
       where: { id },
-      data: { estado },
+      data: { status: nextStatus },
       include: {
         items: true,
       },
     });
   });
+
+  // Notificar al TCP Server cuando se cancela el pedido
+  if (nextStatus === "CANCELLED") {
+    try {
+      const tcpClient = createTcpClient({
+        serviceUrl: env.socketServiceUrl,
+      });
+
+      await tcpClient.sendMessage("CANCEL_ORDER", {
+        orderId: updatedOrder.id,
+      });
+    } catch (error) {
+      console.error(
+        "Pedido cancelado en BD, pero no se notificó al TCP Server:",
+        error.message
+      );
+    }
+  }
+
+  return updatedOrder;
 };
 
-export const getOrdersByStatus = async (status) => {
-  const estadosValidos = [
-    "PENDIENTE",
-    "CONFIRMADO",
-    "EN_PREPARACION",
-    "EN_CAMINO",
-    "ENTREGADO",
-    "CANCELADO",
-  ];
 
+export const getOrdersByStatus = async (status) => {
   if (!status || typeof status !== "string") {
-    throw new AppError(
-      "El parámetro status es obligatorio",
+    throw new HttpError(
+      "El parametro status es obligatorio",
       400
     );
   }
 
-  const estado = status.toUpperCase();
+  const normalizedStatus = status.toUpperCase();
 
-  if (!estadosValidos.includes(estado)) {
-    throw new AppError(
-      "El estado proporcionado no es válido",
+  if (!estadosValidos.includes(normalizedStatus)) {
+    throw new HttpError(
+      "El estado proporcionado no es valido",
       400
     );
   }
 
   return prisma.order.findMany({
     where: {
-      estado,
+      status: normalizedStatus,
     },
     include: {
       items: true,
@@ -374,5 +344,3 @@ export const getOrdersByStatus = async (status) => {
     },
   });
 };
-
-export { AppError };

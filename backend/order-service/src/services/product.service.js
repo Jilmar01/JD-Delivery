@@ -1,19 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../config/database.js";
-
-class AppError extends Error {
-  constructor(message, statusCode = 500) {
-    super(message);
-    this.name = "AppError";
-    this.statusCode = statusCode;
-  }
-}
+import { HttpError } from "../utils/HttpError.js";
 
 const validateId = (idParam) => {
   const id = Number(idParam);
 
   if (!Number.isSafeInteger(id) || id <= 0) {
-    throw new AppError(
+    throw new HttpError(
       "El ID del producto debe ser un entero positivo",
       400
     );
@@ -24,7 +17,7 @@ const validateId = (idParam) => {
 
 const validateName = (name) => {
   if (typeof name !== "string" || !name.trim()) {
-    throw new AppError(
+    throw new HttpError(
       "El nombre del producto es obligatorio",
       400
     );
@@ -39,7 +32,7 @@ const validateDescription = (description) => {
     description !== null &&
     typeof description !== "string"
   ) {
-    throw new AppError(
+    throw new HttpError(
       "La descripción debe ser un texto",
       400
     );
@@ -54,7 +47,7 @@ const validatePrice = (price) => {
     price === null ||
     price === ""
   ) {
-    throw new AppError(
+    throw new HttpError(
       "El precio del producto es obligatorio",
       400
     );
@@ -67,7 +60,7 @@ const validatePrice = (price) => {
     numericPrice <= 0 ||
     !Number.isSafeInteger(Math.round(numericPrice * 100))
   ) {
-    throw new AppError(
+    throw new HttpError(
       "El precio debe ser un número positivo con máximo dos decimales",
       400
     );
@@ -82,7 +75,7 @@ const validateStock = (stock) => {
     stock === null ||
     stock === ""
   ) {
-    throw new AppError(
+    throw new HttpError(
       "El stock del producto es obligatorio",
       400
     );
@@ -94,7 +87,7 @@ const validateStock = (stock) => {
     !Number.isSafeInteger(numericStock) ||
     numericStock < 0
   ) {
-    throw new AppError(
+    throw new HttpError(
       "El stock debe ser un entero mayor o igual a cero",
       400
     );
@@ -105,7 +98,7 @@ const validateStock = (stock) => {
 
 const validateActive = (active) => {
   if (typeof active !== "boolean") {
-    throw new AppError(
+    throw new HttpError(
       "El estado activo debe ser verdadero o falso",
       400
     );
@@ -141,7 +134,7 @@ export const getAllProducts = async (filters = {}) => {
 
   if (filters.active !== undefined) {
     if (filters.active !== "true" && filters.active !== "false") {
-      throw new AppError(
+      throw new HttpError(
         "El filtro active debe ser true o false",
         400
       );
@@ -167,7 +160,7 @@ export const getProductById = async (idParam) => {
   });
 
   if (!product) {
-    throw new AppError("Producto no encontrado", 404);
+    throw new HttpError("Producto no encontrado", 404);
   }
 
   return product;
@@ -182,7 +175,7 @@ export const updateProduct = async (idParam, productData) => {
   });
 
   if (!existingProduct) {
-    throw new AppError("Producto no encontrado", 404);
+    throw new HttpError("Producto no encontrado", 404);
   }
 
   const { name, description, price, stock, active } = productData;
@@ -209,7 +202,7 @@ export const updateProduct = async (idParam, productData) => {
   }
 
   if (Object.keys(data).length === 0) {
-    throw new AppError(
+    throw new HttpError(
       "Debes proporcionar al menos un campo para actualizar",
       400
     );
@@ -231,7 +224,7 @@ export const updateProductStock = async (idParam, stockValue) => {
   });
 
   if (!existingProduct) {
-    throw new AppError("Producto no encontrado", 404);
+    throw new HttpError("Producto no encontrado", 404);
   }
 
   return prisma.product.update({
@@ -249,7 +242,7 @@ export const deleteProduct = async (idParam) => {
   });
 
   if (!existingProduct) {
-    throw new AppError("Producto no encontrado", 404);
+    throw new HttpError("Producto no encontrado", 404);
   }
 
   try {
@@ -261,7 +254,7 @@ export const deleteProduct = async (idParam) => {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2003"
     ) {
-      throw new AppError(
+      throw new HttpError(
         "No se puede eliminar el producto porque está asociado a otros registros",
         409
       );
@@ -271,4 +264,3 @@ export const deleteProduct = async (idParam) => {
   }
 };
 
-export { AppError };

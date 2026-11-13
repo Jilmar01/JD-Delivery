@@ -12,10 +12,12 @@
 
 | Servicio | Puerto | Endpoint de salud | Base de datos |
 |---|---:|---|---|
-| order-service | 3001 | `/health` | `delivery_order_db` |
-| delivery-service | 3002 | `/health` | `delivery_delivery_db` |
-| auth-service | 3003 | `/health` | `delivery_auth_db` |
-| notification-service | 3004 | `/health` | `delivery_notification_db` |
+| order-service | 3001 | `/api/orders/health` | `delivery_order_db` |
+| delivery-service | 3002 | `/api/deliveries/health` | `delivery_delivery_db` |
+| auth-service | 3003 | `/api/auth/health` | `delivery_auth_db` |
+| notification-service | 3004 | `/api/notifications/health` | `delivery_notification_db` |
+| websocket-service | 4321 | `/api/websocket/health` | — |
+| socket-service | 1234 (TCP) | TCP `PING`/`PONG` | — |
 
 ## Requisitos
 
@@ -55,7 +57,7 @@ Para ejecutar los otros servicios, sustituye `order-service` por el nombre del d
 
 Con `order-service` en ejecución, visita:
 
-`http://localhost:3001/health`
+`http://localhost:3001/api/orders/health`
 
 Cada microservicio dispone de su propio servidor Express, configuración de entorno y conexión a PostgreSQL mediante Prisma ORM.
 

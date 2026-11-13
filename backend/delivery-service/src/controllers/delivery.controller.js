@@ -4,12 +4,11 @@ import { errorResponse, successResponse } from "../utils/response.js";
 const handleError = (res, error, operation) => {
   console.error(`${operation}:`, error);
 
-  const statusCode = error.status || 500;
+  const statusCode = error.status || error.statusCode || 500;
 
-  const msgError =
-    statusCode >= 500
-      ? "Error interno del servidor"
-      : error.message;
+  const msgError = error.status || error.statusCode
+    ? error.message
+    : "Error interno del servidor";
 
   return errorResponse(res, operation, msgError, statusCode);
 };
@@ -113,7 +112,7 @@ export async function getDeliveriesByCourier(req, res) {
       data: deliveries,
     });
   } catch (error) {
-    return handleError(res, error);
+    return handleError(res, error, "Error al consultar entregas del repartidor");
   }
 }
 
@@ -123,13 +122,25 @@ export async function getDeliveryByOrder(req, res) {
     const delivery = await deliveryService.getDeliveryByOrder(
       req.params.orderId
     );
-
+    
     return res.status(200).json({
       success: true,
       data: delivery,
     });
   } catch (error) {
-    return handleError(res, error);
+    const statusCode = error.status || error.statusCode;
+
+    // Antes de asignar al repartidor es normal que la entrega aún no exista.
+    if (statusCode === 404) {
+      return successResponse(
+        res,
+        "Todavía no existe una entrega para este pedido",
+        null,
+        200
+      );
+    }
+
+    return handleError(res, error, "Error al consultar entrega por pedido");
   }
 }
 
@@ -144,6 +155,6 @@ export async function getDeliveryHistory(req, res) {
       data: history,
     });
   } catch (error) {
-    return handleError(res, error);
+    return handleError(res, error, "Error al consultar historial de entrega");
   }
 }
