@@ -1,5 +1,5 @@
 
-const AUTH_API_URL = import.meta.env.VITE_AUTH_API_URL || 'https://gph6pj52-3003.use2.devtunnels.ms'
+const AUTH_API_URL = import.meta.env.VITE_AUTH_API_URL || 'http://localhost:3003'
 
 async function solicitarAuth(ruta, opciones) {
   try {

@@ -1,16 +1,9 @@
 // En desarrollo se usa el proxy de vite.config.js (/api y /ws); en producción, la URL configurada
-const API_URL = import.meta.env.DEV
-  ? ''
-  : (
-      import.meta.env.URL_PEDIDOS ||
-      import.meta.env.VITE_ORDERS_API_URL ||
-      import.meta.env.VITE_API_URL ||
-      'http://localhost:3001'
-    ).replace(/\/+$/, '')
+const ORDER_API_URL = import.meta.env.VITE_ORDER_API_URL || 'http://localhost:3001'
+const API_URL = import.meta.env.DEV ? '' : ORDER_API_URL.replace(/\/+$/, '')
 
 const WS_URL =
-  import.meta.env.VITE_WS_URL ||
-  (import.meta.env.DEV ? '/ws' : `${API_URL.replace(/^http/, 'ws')}/ws`)
+  import.meta.env.DEV ? '/ws' : `${API_URL.replace(/^http/, 'ws')}/ws`
 
 const PEDIDOS_API_URL = `${API_URL}/api/orders`
 

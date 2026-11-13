@@ -17,11 +17,13 @@ que se muestra junto al mapa.
 
 ## Integración con autenticación y pedidos
 
-El frontend envía el token de sesión en las peticiones de pedidos mediante
-`Authorization: Bearer <token>`. La URL base se puede configurar con
-`VITE_ORDERS_API_URL` o `VITE_API_URL`; si no se define, se usa
-`https://gph6pj52-3001.use2.devtunnels.ms`. La ruta de pedidos configurada es
-`/api/orders`.
+El frontend envía el token de sesión en las peticiones protegidas mediante
+`Authorization: Bearer <token>`. Configura las URLs en `.env` usando las
+variables `VITE_ORDER_API_URL`, `VITE_AUTH_API_URL`, `VITE_WEBSOCKET_URL` y
+`VITE_DELIVERY_API_URL`. El archivo `.env.example` contiene valores locales de
+referencia; puedes reemplazarlos por las URLs de tu entorno. En desarrollo,
+Vite mantiene los proxies para pedidos y entregas; en producción, el frontend
+usa las URLs configuradas.
 
 El carrito y el formulario actual son de demostración. Preparar un borrador no
 envía datos y la creación real no se activa mientras no haya un catálogo con

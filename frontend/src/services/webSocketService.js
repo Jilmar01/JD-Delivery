@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
+const SOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || 'http://localhost:4321';
 
 const EVENTOS = {
     SOLICITAR_UBICACION: 'SOLICITAR_UBICACION',

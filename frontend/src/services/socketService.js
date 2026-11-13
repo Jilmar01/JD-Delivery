@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client'
 
 const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL || 'http://localhost:4321'
+  import.meta.env.VITE_WEBSOCKET_URL || 'http://localhost:4321'
 
 // Eventos que el servicio de sockets reenvía desde el servidor TCP al repartidor
 const EVENTOS_TCP = [

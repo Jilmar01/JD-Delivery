@@ -9,12 +9,12 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiTarget =
-    env.URL_PEDIDOS || env.VITE_API_URL || 'http://localhost:3001'
+    env.VITE_ORDER_API_URL || 'http://localhost:3001'
   const deliveriesApiTarget =
-    env.URL_DELIVERIES || 'http://localhost:3002'
+    env.VITE_DELIVERY_API_URL || 'http://localhost:3002'
 
   return {
-    envPrefix: ['VITE_', 'URL_PEDIDOS', 'URL_DELIVERIES'],
+    envPrefix: 'VITE_',
     plugins: [react(), tailwindcss()],
     server: {
       proxy: {

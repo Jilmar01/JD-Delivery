@@ -69,7 +69,7 @@ function PortalCliente({ usuario, alCerrarSesion }) {
   useEffect(() => {
     if (usuario.modoDemostracion || sinSesion) return undefined
 
-    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:4321', {
+    const socket = io(import.meta.env.VITE_WEBSOCKET_URL || 'http://localhost:4321', {
       autoConnect: false,
       auth: { token: usuario.token },
       transports: ['polling'],
@@ -143,7 +143,7 @@ function PortalCliente({ usuario, alCerrarSesion }) {
     if (usuario.modoDemostracion || sinSesion) return undefined
 
     let activo = true
-    const socketHttpUrl = (import.meta.env.VITE_SOCKET_URL || 'http://localhost:4321')
+    const socketHttpUrl = import.meta.env.VITE_WEBSOCKET_URL || 'http://localhost:4321'
       .replace(/^ws:/, 'http:')
       .replace(/^wss:/, 'https:')
     const consultarAvisosPendientes = async () => {

@@ -1,6 +1,6 @@
 const API_URL = import.meta.env.DEV
   ? '/deliveries-api'
-  : (import.meta.env.URL_DELIVERIES || '').replace(/\/$/, '')
+  : (import.meta.env.VITE_DELIVERY_API_URL || 'http://localhost:3002').replace(/\/$/, '')
 
 export async function obtenerEntregasPorPedidos(pedidos, token) {
   return Promise.all(
