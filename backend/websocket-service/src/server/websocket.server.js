@@ -6,6 +6,7 @@ import { authMiddleware } from '../middleware/auth.middleware.js';
 import { createConnectionHandler } from '../handlers/connection.handler.js';
 import { createDriverHandler } from '../handlers/driver.handler.js';
 import { createCustomerHandler } from '../handlers/customer.handler.js';
+import { createAdminHandler } from '../handlers/admin.handler.js';
 import { createConnectionService } from '../services/connection.service.js';
 import { createNotificationService } from '../services/notification.service.js';
 
@@ -52,10 +53,13 @@ export const createWebSocketServer = ({
     env
   });
 
+  const adminHandler = createAdminHandler();
+
   // Junta los manejadores que se usarán cuando alguien se conecte.
   const connectionHandler = createConnectionHandler({
     driverHandler,
-    customerHandler
+    customerHandler,
+    adminHandler
   });
 
   // Comprueba la identidad de cada conexión antes de aceptarla.

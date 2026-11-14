@@ -23,6 +23,14 @@ export const createConnectionService = (io) => {
     });
   };
 
+  const sendToRoom = (room, event, data) => {
+    const connected = io.sockets.adapter.rooms.get(room)?.size > 0;
+    if (!connected) return false;
+
+    io.to(room).emit(event, data);
+    return true;
+  };
+
   const sendToSocket = (socketId, event, data) => {
     const socket = io.sockets.sockets.get(socketId);
 
@@ -42,6 +50,7 @@ export const createConnectionService = (io) => {
   return {
     sendToUser,
     sendToUsers,
+    sendToRoom,
     sendToSocket,
     isUserConnected
   };

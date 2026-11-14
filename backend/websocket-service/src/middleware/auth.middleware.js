@@ -18,7 +18,7 @@ export const authMiddleware = (socket, next) => {
       return next(new Error('INVALID_TOKEN_PAYLOAD'));
     }
 
-    if (!['CUSTOMER', 'DELIVERY_PERSON'].includes(role)) {
+    if (!['CUSTOMER', 'DELIVERY_PERSON', 'ADMIN'].includes(role)) {
       return next(new Error('INVALID_USER_ROLE'));
     }
 

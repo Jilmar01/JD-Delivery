@@ -94,8 +94,9 @@ export const createDriverHandler = ({
 
       const updatedDelivery = updatedResult.data;
 
+      let updatedOrder;
       try {
-        await avanzarEstadoPedido(delivery.orderId, updatedDelivery.status);
+        updatedOrder = await avanzarEstadoPedido(delivery.orderId, updatedDelivery.status);
       } catch (error) {
         console.error(
           'ERROR:',
@@ -129,6 +130,14 @@ export const createDriverHandler = ({
         String(userId),
         statusEvent
       );
+
+      notificationService.notifyAdminOrderUpdated({
+        ...orderResult.data,
+        ...(updatedOrder || {}),
+        id: delivery.orderId,
+        status: updatedOrder?.status || updatedDelivery.status,
+        courierId: updatedDelivery.courierId ?? userId
+      });
 
       respond({ success: true, data: updatedDelivery });
 

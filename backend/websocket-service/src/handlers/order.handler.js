@@ -1,5 +1,6 @@
 import { createOrderStatusService } from '../services/order-status.service.js';
 import { savePendingOrderSearch } from '../stores/pending-order-search.store.js';
+import { TCP_EVENTS } from '../protocols/message.types.js';
 
 const serviceHeaders = (internalToken) => ({
   'Content-Type': 'application/json',
@@ -94,6 +95,29 @@ export const createOrderHandler = ({
     }
     if (driverId != null) {
       notificationService.notifyDriverDeliveryStatus(String(driverId), event);
+    }
+
+    notificationService.notifyAdminOrderUpdated(
+      order || { id: orderId, status: 'CANCELLED' }
+    );
+  };
+
+  const handleOrderCreated = async (payload) => {
+    const orderId = Number(payload?.orderId);
+    if (!Number.isSafeInteger(orderId) || orderId <= 0) return;
+
+    try {
+      const response = await fetch(
+        `${env.orderServiceUrl}/api/orders/${orderId}`,
+        { headers: serviceHeaders(env.internalServiceToken) }
+      );
+      const order = await readServiceResponse(
+        response,
+        'No se pudo consultar el pedido recién creado.'
+      );
+      notificationService.notifyAdminOrderCreated(order);
+    } catch (error) {
+      console.error(`ERROR: No se pudo notificar el nuevo pedido ${orderId} al administrador:`, error.message);
     }
   };
 
@@ -275,6 +299,11 @@ export const createOrderHandler = ({
           status: updatedOrder.status
         });
       }
+      notificationService.notifyAdminOrderUpdated({
+        ...order,
+        ...(updatedOrder || {}),
+        courierId: driverId
+      });
     } catch (error) {
       const failure = {
         dispatchId: payload.dispatchId,
@@ -308,6 +337,11 @@ export const createOrderHandler = ({
 
     if (type === 'NO_DRIVERS_AVAILABLE') {
       await handleNoDriversAvailable(payload);
+      return true;
+    }
+
+    if (type === TCP_EVENTS.ORDER_CREATED) {
+      await handleOrderCreated(payload);
       return true;
     }
 

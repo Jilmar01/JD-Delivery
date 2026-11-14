@@ -2,7 +2,9 @@ import {
   OFFER_EVENTS,
   ASSIGNMENT_EVENTS,
   CUSTOMER_EVENTS,
-  DRIVER_EVENTS
+  DRIVER_EVENTS,
+  ADMIN_EVENTS,
+  ADMIN_ROOM
 } from '../protocols/message.types.js';
 
 export const createNotificationService = (connectionService) => {
@@ -78,6 +80,12 @@ export const createNotificationService = (connectionService) => {
     );
   };
 
+  const notifyAdminOrderCreated = (order) =>
+    connectionService.sendToRoom(ADMIN_ROOM, ADMIN_EVENTS.ORDER_CREATED, order);
+
+  const notifyAdminOrderUpdated = (order) =>
+    connectionService.sendToRoom(ADMIN_ROOM, ADMIN_EVENTS.ORDER_UPDATED, order);
+
   const notifyDeliveryStatus = (customerId, driverId, data) => {
     return {
       customerNotified: notifyOrderStatus(customerId, data),
@@ -95,6 +103,8 @@ export const createNotificationService = (connectionService) => {
     notifyOrderStatus,
     notifyCustomerLocation,
     notifyDriverDeliveryStatus,
-    notifyDeliveryStatus
+    notifyDeliveryStatus,
+    notifyAdminOrderCreated,
+    notifyAdminOrderUpdated
   };
 };
