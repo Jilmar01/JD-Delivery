@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
+import { io } from 'socket.io-client'
 import {
   normalizarEventoPedido,
-  obtenerOfertasPedido,
   obtenerPaginaPedidosAdministrativos,
   obtenerPaginaPedidosParaVistaPrevia,
   WS_URL,
 } from '../services/pedidosService'
 import { obtenerEntregasPorPedidos } from '../services/entregasService'
-import { obtenerNombresUsuarios } from '../services/authService'
-import { direccionDe } from '../services/geocodificacion'
 import { formatoDuracion } from '../utils/tiempo'
-import { colorEstado, etiquetaEstado } from '../utils/estados'
+import { etiquetaEstado } from '../utils/estados'
 
 const ESTADOS = [
   'PENDIENTE',
@@ -24,6 +22,25 @@ const ESTADOS = [
 const FILTROS = ['TODOS', ...ESTADOS]
 const TAMANO_PAGINA = 5
 
+function colorEstadoAdmin(estado) {
+  const colores = {
+    PENDIENTE: 'bg-amber-100 text-amber-900 ring-amber-200',
+    PENDING: 'bg-amber-100 text-amber-900 ring-amber-200',
+    CONFIRMADO: 'bg-blue-100 text-blue-900 ring-blue-200',
+    CONFIRMED: 'bg-blue-100 text-blue-900 ring-blue-200',
+    EN_PREPARACION: 'bg-indigo-100 text-indigo-900 ring-indigo-200',
+    PREPARING: 'bg-indigo-100 text-indigo-900 ring-indigo-200',
+    EN_CAMINO: 'bg-sky-100 text-sky-900 ring-sky-200',
+    IN_TRANSIT: 'bg-sky-100 text-sky-900 ring-sky-200',
+    ENTREGADO: 'bg-emerald-600 text-white ring-emerald-700',
+    DELIVERED: 'bg-emerald-600 text-white ring-emerald-700',
+    CANCELADO: 'bg-red-600 text-white ring-red-700',
+    CANCELLED: 'bg-red-600 text-white ring-red-700',
+  }
+
+  return colores[estado] || 'bg-slate-100 text-slate-700 ring-slate-200'
+}
+
 function mostrarTotal(total) {
   const valor = Number(total)
 
@@ -35,17 +52,6 @@ function mostrarTotal(total) {
     style: 'currency',
     currency: 'USD',
   }).format(valor)
-}
-
-function mostrarFechaHora(fecha) {
-  if (!fecha) {
-    return '—'
-  }
-
-  const fechaValida = new Date(fecha)
-  return Number.isNaN(fechaValida.getTime())
-    ? '—'
-    : fechaValida.toLocaleString('es-EC')
 }
 
 // Desde que el repartidor recibe el pedido hasta que lo entrega (o hasta ahora, si sigue en curso)
@@ -76,9 +82,7 @@ function PanelAdministrativo({ usuario }) {
   const [estadoSocket, setEstadoSocket] = useState(
     usuario.demo ? 'demo' : 'conectando'
   )
-  const [nombres, setNombres] = useState({})
   const [ahora, setAhora] = useState(() => Date.now())
-  const [ubicaciones, setUbicaciones] = useState({})
 
   // El tiempo de las entregas en curso avanza cada segundo
   const hayEnCurso = Object.values(entregas).some(
@@ -104,51 +108,16 @@ function PanelAdministrativo({ usuario }) {
       return siguientes
     })
 
-    const cargadas = resultados.filter((r) => r.status === 'loaded')
-
-    // Nombres de clientes y repartidores en lugar de sus números de usuario
-    const nuevosNombres = await obtenerNombresUsuarios(
-      [
-        ...listaPedidos.map((p) => p.cliente),
-        ...cargadas.map((r) => r.data.courierId),
-      ],
-      token
-    )
-    setNombres((anteriores) => ({ ...anteriores, ...nuevosNombres }))
-
-    // Dónde estaba el repartidor cuando aceptó el pedido (primero coordenadas, luego la dirección)
-    for (const { orderId, data } of cargadas) {
-      if (!data.courierId) continue
-
-      obtenerOfertasPedido(orderId, token)
-        .then((eventos) => {
-          const aceptada = eventos.find(
-            (e) => e.evento === 'ACEPTADA' && Number.isFinite(e.lat) && Number.isFinite(e.lng)
-          )
-          if (!aceptada) return undefined
-
-          setUbicaciones((anteriores) => ({
-            ...anteriores,
-            [orderId]: { lat: aceptada.lat, lng: aceptada.lng, texto: anteriores[orderId]?.texto ?? null },
-          }))
-          return direccionDe(aceptada.lat, aceptada.lng).then((texto) => {
-            if (texto) {
-              setUbicaciones((anteriores) => ({
-                ...anteriores,
-                [orderId]: { lat: aceptada.lat, lng: aceptada.lng, texto },
-              }))
-            }
-          })
-        })
-        .catch(() => {})
-    }
+    // Current APIs do not expose user names or historical courier locations.
   }, [usuario.demo, usuario.token])
 
   useEffect(() => {
     let desmontado = false
-    let reintento
     let socket
+    let inicioSocket
     let versionEventos = 0
+    let pedidosCreadosDuranteCarga = 0
+    let cargaInicialCompleta = false
     const token = usuario.demo ? undefined : usuario.token
 
     async function cargarPedidos() {
@@ -163,9 +132,22 @@ function PanelAdministrativo({ usuario }) {
               TAMANO_PAGINA
             )
 
-        if (!desmontado && versionInicial === versionEventos) {
-          setPedidos(pagina.data)
-          setTotalPedidos(pagina.total)
+        cargaInicialCompleta = true
+        if (!desmontado) {
+          setPedidos((anteriores) => {
+            if (versionInicial === versionEventos) return pagina.data
+
+            const idsActuales = new Set(anteriores.map((pedido) => pedido.id))
+            return [
+              ...anteriores,
+              ...pagina.data.filter((pedido) => !idsActuales.has(pedido.id)),
+            ]
+          })
+          setTotalPedidos(
+            pagina.total === null
+              ? null
+              : pagina.total + pedidosCreadosDuranteCarga
+          )
           setOffsetSiguiente(pagina.data.length)
           setHayMasPedidos(
             pagina.total === null
@@ -194,85 +176,56 @@ function PanelAdministrativo({ usuario }) {
       }
     }
 
-    function conectarWebSocket() {
-      if (desmontado) {
-        return
-      }
+    function aplicarEventoPedido(tipo, datos) {
+      if (!['ORDER_CREATED', 'ORDER_UPDATED'].includes(tipo) || !datos) return
 
-      setEstadoSocket('conectando')
-      socket = new WebSocket(WS_URL)
-
-      socket.onopen = () => {
-        if (!desmontado) {
-          socket.send(
-            JSON.stringify({ tipo: 'AUTENTICAR', token: usuario.token })
-          )
+      try {
+        const pedidoActualizado = normalizarEventoPedido(datos.datos || datos)
+        versionEventos += 1
+        if (tipo === 'ORDER_CREATED') pedidosCreadosDuranteCarga += 1
+        setPedidos((anteriores) => {
+          const yaExiste = anteriores.some((pedido) => pedido.id === pedidoActualizado.id)
+          return yaExiste
+            ? anteriores.map((pedido) => pedido.id === pedidoActualizado.id ? pedidoActualizado : pedido)
+            : [pedidoActualizado, ...anteriores]
+        })
+        if (tipo === 'ORDER_CREATED' && cargaInicialCompleta) {
+          setTotalPedidos((total) => total === null ? null : total + 1)
         }
-      }
-
-      socket.onmessage = (mensaje) => {
-        try {
-          const evento = JSON.parse(mensaje.data)
-
-          if (evento.tipo === 'CONECTADO') {
-            setEstadoSocket('conectado')
-            return
-          }
-
-          if (
-            !['PEDIDO_CREADO', 'PEDIDO_ACTUALIZADO'].includes(evento.tipo) ||
-            !evento.datos
-          ) {
-            return
-          }
-
-          const pedidoActualizado = normalizarEventoPedido(evento.datos)
-          versionEventos += 1
-          if (evento.tipo === 'PEDIDO_CREADO') {
-            setTotalPedidos((total) =>
-              total === null ? null : total + 1
-            )
-          }
-          setPedidos((anteriores) => {
-            const yaExiste = anteriores.some(
-              (pedido) => pedido.id === pedidoActualizado.id
-            )
-
-            return yaExiste
-              ? anteriores.map((pedido) =>
-                  pedido.id === pedidoActualizado.id
-                    ? pedidoActualizado
-                    : pedido
-                )
-              : [pedidoActualizado, ...anteriores]
-          })
-          void cargarEntregas([pedidoActualizado])
-          setError('')
-        } catch (err) {
-          setError(
-            err.message || 'No se pudo procesar una actualización en tiempo real.'
-          )
-        }
-      }
-
-      socket.onerror = () => {
-        socket.close()
-      }
-
-      socket.onclose = () => {
-        if (!desmontado) {
-          setEstadoSocket('desconectado')
-          reintento = window.setTimeout(conectarWebSocket, 3000)
-        }
+        void cargarEntregas([pedidoActualizado])
+        setError('')
+      } catch (err) {
+        setError(err.message || 'No se pudo procesar una actualizacion en tiempo real.')
       }
     }
 
-    conectarWebSocket()
+    socket = io(WS_URL, {
+      auth: { token },
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      transports: ['websocket', 'polling'],
+      autoConnect: false,
+    })
+    socket.on('connect', () => {
+      if (!desmontado) setEstadoSocket('conectado')
+    })
+    socket.on('disconnect', () => {
+      if (!desmontado) setEstadoSocket('desconectado')
+    })
+    socket.on('connect_error', (err) => {
+      if (!desmontado) setEstadoSocket('desconectado')
+      if (err.message === 'INVALID_USER_ROLE') socket.disconnect()
+    })
+    socket.on('ORDER_CREATED', (datos) => aplicarEventoPedido('ORDER_CREATED', datos))
+    socket.on('ORDER_UPDATED', (datos) => aplicarEventoPedido('ORDER_UPDATED', datos))
+    inicioSocket = window.setTimeout(() => socket.connect(), 0)
 
     return () => {
       desmontado = true
-      window.clearTimeout(reintento)
-      socket?.close()
+      window.clearTimeout(inicioSocket)
+      socket?.removeAllListeners()
+      socket?.disconnect()
     }
   }, [cargarEntregas, usuario.demo, usuario.token])
 
@@ -377,18 +330,18 @@ function PanelAdministrativo({ usuario }) {
   )
   const entregados = pedidos.filter((pedido) => pedido.estado === 'ENTREGADO')
   return (
-    <main className="mx-auto max-w-7xl space-y-7 px-5 py-8 sm:px-8 sm:py-10">
-      <section className="relative overflow-hidden rounded-2xl border border-purple-500/20 bg-gradient-to-r from-purple-950/60 via-[#18151f] to-[#15151A] p-6 sm:p-8">
-        <div className="absolute -right-10 -top-16 h-48 w-48 rounded-full bg-purple-500/10 blur-3xl" />
+    <main className="mx-auto max-w-7xl space-y-7 px-5 py-8 text-slate-900 sm:px-8 sm:py-10">
+      <section className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-r from-white via-white to-blue-50 p-6 shadow-sm sm:p-8">
+        <div className="absolute -right-10 -top-16 h-48 w-48 rounded-full bg-blue-200/40 blur-3xl" />
         <div className="relative flex flex-wrap items-end justify-between gap-5">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-widest text-purple-300">
+            <p className="text-sm font-semibold uppercase tracking-widest text-blue-700">
               Operaciones · Administrador
             </p>
-            <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">
+            <h2 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">
               Panel de pedidos
             </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300">
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
               Supervisa los pedidos y sus cambios de estado en tiempo real.
             </p>
           </div>
@@ -396,7 +349,7 @@ function PanelAdministrativo({ usuario }) {
           {usuario.demo ? (
             <div
               role="status"
-              className="inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300"
+              className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"
             >
               Vista previa · datos desde API
             </div>
@@ -405,15 +358,15 @@ function PanelAdministrativo({ usuario }) {
               role="status"
               className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold ${
                 estadoSocket === 'conectado'
-                  ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-                  : 'border-amber-500/10 bg-amber-500/10 text-amber-300'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : 'border-amber-200 bg-amber-50 text-amber-800'
               }`}
             >
               <span
                 className={`h-2 w-2 rounded-full ${
                   estadoSocket === 'conectado'
-                    ? 'bg-emerald-400'
-                    : 'bg-amber-400'
+                    ? 'bg-emerald-500'
+                    : 'bg-amber-500'
                 }`}
               />
               {estadoSocket === 'conectado'
@@ -441,10 +394,10 @@ function PanelAdministrativo({ usuario }) {
         ].map((dato) => (
           <article
             key={dato.etiqueta}
-            className="rounded-2xl border border-white/10 bg-[#18181B] p-5 shadow-lg shadow-black/10"
+            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60"
           >
-            <p className="text-sm text-zinc-400">{dato.etiqueta}</p>
-            <p className="mt-2 text-3xl font-bold text-white">{dato.valor}</p>
+            <p className="text-sm text-slate-500">{dato.etiqueta}</p>
+            <p className="mt-2 text-3xl font-bold text-slate-950">{dato.valor}</p>
           </article>
         ))}
       </section>
@@ -452,25 +405,25 @@ function PanelAdministrativo({ usuario }) {
       {error && (
         <p
           role="alert"
-          className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300"
+          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
         >
           {error}
         </p>
       )}
 
-      <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#18181B] shadow-xl shadow-black/10">
-        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-7">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-7">
           <div>
-            <h3 className="text-lg font-bold text-white sm:text-xl">
+            <h3 className="text-lg font-bold text-slate-950 sm:text-xl">
               Todos los pedidos
             </h3>
-            <p className="mt-1 text-sm text-zinc-400">
+            <p className="mt-1 text-sm text-slate-500">
               Elige un estado para filtrar la tabla.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-zinc-300">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
               Estado
               <select
                 aria-label="Filtrar pedidos por estado"
@@ -479,7 +432,7 @@ function PanelAdministrativo({ usuario }) {
                   setFiltro(evento.target.value)
                   setPaginaActual(0)
                 }}
-                className="rounded-lg border border-zinc-700 bg-[#09090B] px-3 py-2 text-sm text-white outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-500/10"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15"
               >
                 {FILTROS.map((estado) => (
                   <option key={estado} value={estado}>
@@ -493,7 +446,7 @@ function PanelAdministrativo({ usuario }) {
               type="button"
               onClick={recargarPedidos}
               disabled={cargando || cargandoMas}
-              className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-200 transition hover:border-purple-500/50 hover:text-white disabled:cursor-wait disabled:opacity-60"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-800 disabled:cursor-wait disabled:opacity-60"
             >
               {cargando ? 'Cargando…' : 'Actualizar'}
             </button>
@@ -501,8 +454,8 @@ function PanelAdministrativo({ usuario }) {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1450px] text-left text-sm">
-            <thead className="bg-[#111113] text-xs uppercase tracking-wider text-zinc-500">
+          <table className="w-full min-w-[900px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th scope="col" className="px-5 py-4 sm:px-7">
                   Pedido
@@ -520,18 +473,6 @@ function PanelAdministrativo({ usuario }) {
                   Lugar de entrega
                 </th>
                 <th scope="col" className="px-5 py-4">
-                  Lugar del repartidor
-                </th>
-                <th scope="col" className="px-5 py-4">
-                  Hora asignada
-                </th>
-                <th scope="col" className="px-5 py-4">
-                  Hora de recogida
-                </th>
-                <th scope="col" className="px-5 py-4">
-                  Hora de llegada
-                </th>
-                <th scope="col" className="px-5 py-4">
                   Total
                 </th>
                 <th scope="col" className="px-5 py-4 sm:px-7">
@@ -542,13 +483,13 @@ function PanelAdministrativo({ usuario }) {
             <tbody className="divide-y divide-white/5">
               {cargando && pedidos.length === 0 ? (
                 <tr>
-                  <td colSpan="11" className="px-5 py-12 text-center text-zinc-400">
+                  <td colSpan="7" className="px-5 py-12 text-center text-slate-500">
                     Cargando pedidos…
                   </td>
                 </tr>
               ) : pedidosDeLaPagina.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="px-5 py-12 text-center text-zinc-400">
+                  <td colSpan="7" className="px-5 py-12 text-center text-slate-500">
                     {pedidos.length === 0
                       ? 'Todavía no hay pedidos registrados.'
                       : 'No hay pedidos para este estado.'}
@@ -557,20 +498,19 @@ function PanelAdministrativo({ usuario }) {
               ) : (
                 pedidosDeLaPagina.map((pedido) => {
                   const entrega = entregas[pedido.id]
-                  const ubicacion = ubicaciones[pedido.id]
-                  const nombreCliente = nombres[pedido.cliente] || `Cliente ${pedido.cliente}`
+                  const nombreCliente = `Cliente ${pedido.cliente}`
                   const courierId = entrega?.status === 'loaded' ? entrega.data.courierId : null
 
                   return (
-                    <tr key={pedido.id} className="text-zinc-300">
+                    <tr key={pedido.id} className="text-slate-700">
                       <th
                         scope="row"
-                        className="whitespace-nowrap px-5 py-4 font-semibold text-white sm:px-7"
+                        className="whitespace-nowrap px-5 py-4 font-semibold text-slate-950 sm:px-7"
                       >
                         <span className="block">
                           PED-{String(pedido.id).padStart(3, '0')}
                         </span>
-                        <span className="mt-1 block text-xs font-normal text-zinc-500">
+                        <span className="mt-1 block text-xs font-normal text-slate-500">
                           {pedido.fecha}
                         </span>
                       </th>
@@ -579,47 +519,21 @@ function PanelAdministrativo({ usuario }) {
                       </td>
                       <td className="whitespace-nowrap px-5 py-4">
                         <span
-                          className={`inline-flex rounded-full px-3 py-1.5 text-xs font-bold ${colorEstado(pedido.estado)}`}
+                          className={`inline-flex rounded-full px-3 py-1.5 text-xs font-bold ring-1 ring-inset ${colorEstadoAdmin(pedido.estado)}`}
                         >
                           {etiquetaEstado(pedido.estado)}
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-5 py-4">
                         {courierId
-                          ? nombres[courierId] || `Repartidor ${courierId}`
+                          ? `Repartidor ${courierId}`
                           : 'Sin asignar'}
                       </td>
                       <td
                         className="max-w-64 truncate px-5 py-4"
-                        title={entrega?.data?.deliveryAddress || ''}
+                        title={pedido.direccion || entrega?.data?.deliveryAddress || ''}
                       >
-                        {entrega?.status === 'loaded'
-                          ? entrega.data.deliveryAddress || '—'
-                          : '—'}
-                      </td>
-                      <td
-                        className="max-w-64 truncate px-5 py-4"
-                        title={ubicacion?.texto || ''}
-                      >
-                        {ubicacion
-                          ? ubicacion.texto ||
-                            `${ubicacion.lat.toFixed(5)}, ${ubicacion.lng.toFixed(5)}`
-                          : '—'}
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-4">
-                        {entrega?.status === 'loaded'
-                          ? mostrarFechaHora(entrega.data.assignedAt)
-                          : '—'}
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-4">
-                        {entrega?.status === 'loaded'
-                          ? mostrarFechaHora(entrega.data.startedAt)
-                          : '—'}
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-4">
-                        {entrega?.status === 'loaded'
-                          ? mostrarFechaHora(entrega.data.deliveredAt)
-                          : '—'}
+                        {pedido.direccion || entrega?.data?.deliveryAddress || '—'}
                       </td>
                       <td className="whitespace-nowrap px-5 py-4">
                         {mostrarTotal(pedido.total)}
@@ -635,7 +549,7 @@ function PanelAdministrativo({ usuario }) {
           </table>
         </div>
 
-        <div className="border-t border-white/10 px-5 py-3 text-xs text-zinc-500 sm:px-7">
+        <div className="border-t border-slate-200 px-5 py-3 text-xs text-slate-500 sm:px-7">
           Mostrando {pedidosDeLaPagina.length} pedidos en esta página
           {totalPedidos !== null ? ` de ${totalPedidos}` : ''} · El estado y
           las horas se actualizan en vivo.
@@ -646,7 +560,7 @@ function PanelAdministrativo({ usuario }) {
           (paginaActual + 1) * TAMANO_PAGINA < pedidos.length) && (
           <nav
             aria-label="Paginación de pedidos"
-            className="flex items-center justify-center gap-3 border-t border-white/10 px-5 py-4"
+            className="flex items-center justify-center gap-3 border-t border-slate-200 px-5 py-4"
           >
             <button
               type="button"
@@ -654,11 +568,11 @@ function PanelAdministrativo({ usuario }) {
               disabled={paginaActual === 0 || cargando || cargandoMas}
               aria-label="Ver pedidos anteriores"
               title="Ver pedidos anteriores"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-lg font-semibold text-zinc-200 transition hover:border-purple-500/50 hover:bg-purple-500/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-white text-lg font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <span aria-hidden="true">&lt;</span>
             </button>
-            <span className="min-w-20 text-center text-xs text-zinc-400">
+            <span className="min-w-20 text-center text-xs text-slate-500">
               Página {paginaActual + 1}
             </span>
             <button
@@ -672,7 +586,7 @@ function PanelAdministrativo({ usuario }) {
               }
               aria-label="Ver siguientes pedidos"
               title="Ver siguientes pedidos"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-lg font-semibold text-zinc-200 transition hover:border-purple-500/50 hover:bg-purple-500/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-white text-lg font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <span aria-hidden="true">&gt;</span>
             </button>

@@ -4,10 +4,10 @@ import Login from './Login'
 import EncabezadoApp from './components/EncabezadoApp'
 import PortalCliente from './components/PortalCliente'
 import PanelRepartidor from './components/PanelRepartidor'
-import PanelAdministrativo from './components/PanelAdministrativo'
+import PanelAdministrativo from './pages/PanelAdministrativo'
 
-// Cliente y repartidor usan la interfaz clara; el administrador, la oscura
-const CLARO = ['CLIENTE', 'REPARTIDOR']
+// Todas las rutas autenticadas usan la interfaz clara.
+const CLARO = ['CLIENTE', 'REPARTIDOR', 'ADMIN']
 const CLAVE_SESION = 'jd-delivery-sesion'
 
 function leerSesion() {

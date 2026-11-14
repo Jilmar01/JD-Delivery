@@ -139,22 +139,3 @@ export async function iniciarSesion(nombreUsuario, contrasena) {
     token: datos.data.token,
   }
 }
-
-const AUTH_USERS_URL = `${AUTH_API_URL}/api/auth/users`
-
-/** Nombres de usuario por id (solo administradores): { 1: 'Dario', 2: 'Luis' } */
-export async function obtenerNombresUsuarios(ids, token) {
-  const unicos = [...new Set(ids.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
-  if (unicos.length === 0 || !token) return {}
-
-  try {
-    const respuesta = await fetch(`${AUTH_USERS_URL}?ids=${unicos.join(',')}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!respuesta.ok) return {}
-    const { data } = await respuesta.json()
-    return Object.fromEntries(data.map((u) => [u.id, u.username]))
-  } catch {
-    return {}
-  }
-}

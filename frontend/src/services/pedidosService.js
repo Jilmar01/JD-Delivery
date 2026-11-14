@@ -1,9 +1,8 @@
-// En desarrollo se usa el proxy de vite.config.js (/api y /ws); en producción, la URL configurada
+// Order REST uses the Vite proxy in development; Socket.IO uses its configured service URL.
 const ORDER_API_URL = import.meta.env.VITE_ORDER_API_URL || 'http://localhost:3001'
 const API_URL = import.meta.env.DEV ? '' : ORDER_API_URL.replace(/\/+$/, '')
 
-const WS_URL =
-  import.meta.env.DEV ? '/ws' : `${API_URL.replace(/^http/, 'ws')}/ws`
+const WS_URL = import.meta.env.VITE_WEBSOCKET_URL || 'http://localhost:4321'
 
 const PEDIDOS_API_URL = `${API_URL}/api/orders`
 
@@ -122,6 +121,9 @@ export async function crearPedido(datosPedido, token) {
 /** Ciclo de la oferta: [{ evento, repartidores?, repartidorId?, fecha }] */
 export async function obtenerOfertasPedido(id, token) {
   const { data } = await solicitar(`${PEDIDOS_API_URL}/${id}/ofertas`, { token })
+  if (!Array.isArray(data)) {
+    throw new Error('El servicio de pedidos devolvio ofertas con formato invalido.')
+  }
   return data
 }
 
@@ -175,6 +177,7 @@ function normalizarPedidoAdministrativo(pedido) {
       pedido.customerId ||
       pedido.cliente ||
       `Cliente ${pedido.id}`,
+    direccion: pedido.deliveryAddress || pedido.direccion || '',
     repartidor: pedido.repartidorId
       ? `Repartidor ${pedido.repartidorId}`
       : 'Sin asignar',
