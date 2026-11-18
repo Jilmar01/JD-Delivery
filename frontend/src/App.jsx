@@ -36,15 +36,30 @@ function normalizarRuta(ruta) {
   return limpia === '/client' ? '/customer' : limpia
 }
 
-function VistaPorRol({ usuario, alCerrarSesion }) {
+function VistaPorRol({
+  usuario,
+  alCerrarSesion,
+  headerSection,
+  onHeaderSectionChange,
+  onDisponibilidadChange,
+}) {
   switch (usuario.rol) {
     case 'CLIENTE':
       return (
-        <PortalCliente usuario={usuario} alCerrarSesion={alCerrarSesion} />
+        <PortalCliente
+          usuario={usuario}
+          headerSection={headerSection}
+          onHeaderSectionChange={onHeaderSectionChange}
+          alCerrarSesion={alCerrarSesion}
+        />
       )
     case 'REPARTIDOR':
       return (
-        <PanelRepartidor usuario={usuario} alCerrarSesion={alCerrarSesion} />
+        <PanelRepartidor
+          usuario={usuario}
+          alCerrarSesion={alCerrarSesion}
+          onDisponibilidadChange={onDisponibilidadChange}
+        />
       )
     case 'ADMIN':
       return <PanelAdministrativo usuario={usuario} />
@@ -79,6 +94,8 @@ function App() {
   )
   const [mensajeSesion, setMensajeSesion] = useState('')
   const [ruta, setRuta] = useState(() => normalizarRuta(window.location.pathname))
+  const [seccionHeader, setSeccionHeader] = useState('')
+  const [disponibilidadRepartidor, setDisponibilidadRepartidor] = useState(undefined)
 
   const navegar = useCallback((destino, reemplazar = false) => {
     destino = normalizarRuta(destino)
@@ -87,6 +104,25 @@ function App() {
     }
     setRuta(destino)
   }, [])
+
+  useEffect(() => {
+    setSeccionHeader(
+      usuario?.rol === 'ADMIN'
+        ? 'dashboard'
+        : usuario?.rol === 'REPARTIDOR'
+          ? 'panel'
+          : 'inicio'
+    )
+  }, [usuario?.rol])
+
+  const navegarDesdeHeader = useCallback((seccion, destino) => {
+    setSeccionHeader(seccion)
+    if (usuario?.rol !== 'CLIENTE' && destino) {
+      requestAnimationFrame(() => {
+        document.getElementById(destino)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    }
+  }, [usuario?.rol])
 
   useEffect(() => {
     const alCambiarRuta = () => setRuta(normalizarRuta(window.location.pathname))
@@ -164,6 +200,9 @@ function App() {
     >
       <EncabezadoApp
         usuario={usuario}
+        seccionActiva={seccionHeader}
+        onNavegar={navegarDesdeHeader}
+        disponibilidad={usuario.rol === 'REPARTIDOR' ? disponibilidadRepartidor : undefined}
         alCerrarSesion={() => {
           setMensajeSesion('')
           setUsuario(null)
@@ -184,6 +223,9 @@ function App() {
       <VistaPorRol
         usuario={usuario}
         alCerrarSesion={alCerrarSesionPorExpiracion}
+        headerSection={seccionHeader}
+        onHeaderSectionChange={setSeccionHeader}
+        onDisponibilidadChange={setDisponibilidadRepartidor}
       />
 
       <footer

@@ -10,7 +10,7 @@ import { cancelarPedido, crearPedido, obtenerPedidosCliente } from '../services/
 import { CATEGORIAS, COMIDAS_DEMO, formatoMoneda } from '../utils/catalogo'
 import pizza from '../assets/images/pizza.jpg'
 
-function PortalCliente({ usuario, alCerrarSesion }) {
+function PortalCliente({ usuario, alCerrarSesion, headerSection, onHeaderSectionChange }) {
   const [pedidos, setPedidos] = useState([])
   const [cantidadesCarrito, setCantidadesCarrito] = useState({})
   const [direccion, setDireccion] = useState('')
@@ -31,6 +31,23 @@ function PortalCliente({ usuario, alCerrarSesion }) {
   const [errorReintentoSeguimiento, setErrorReintentoSeguimiento] = useState('')
   const customerId = String(usuario.id ?? '')
   const sinSesion = !usuario.token || !customerId
+
+  useEffect(() => {
+    const destinos = {
+      inicio: { pestana: 'inicio', id: 'portal-inicio' },
+      pedidos: { pestana: 'inicio', id: 'mis-pedidos' },
+      historial: { pestana: 'historial', id: 'historial' },
+      ubicacion: { pestana: 'inicio', id: 'crear-pedido' },
+    }
+    const destino = destinos[headerSection]
+    if (!destino) return undefined
+
+    setPestana(destino.pestana)
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(destino.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [headerSection])
 
   function cambiarCantidad(comida, cambio) {
     setError('')
@@ -374,7 +391,7 @@ function PortalCliente({ usuario, alCerrarSesion }) {
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto max-w-7xl space-y-8 px-4 py-7 sm:space-y-10 sm:px-8 sm:py-10">
-        <section className="relative isolate min-h-[320px] overflow-hidden rounded-3xl bg-[#07172D] shadow-xl shadow-blue-950/10 sm:min-h-[350px] lg:min-h-[390px]">
+        <section id="portal-inicio" className="scroll-mt-28 relative isolate min-h-[320px] overflow-hidden rounded-3xl bg-[#07172D] shadow-xl shadow-blue-950/10 sm:min-h-[350px] lg:min-h-[390px]">
           <div className="absolute inset-0 z-0 bg-gradient-to-br from-[#0B2A50] via-[#0B1D38] to-[#061226]" />
           <img
             src={pizza}
@@ -425,7 +442,10 @@ function PortalCliente({ usuario, alCerrarSesion }) {
               type="button"
               role="tab"
               aria-selected={pestana === opcion.id}
-              onClick={() => setPestana(opcion.id)}
+              onClick={() => {
+                setPestana(opcion.id)
+                onHeaderSectionChange?.(opcion.id === 'historial' ? 'historial' : 'inicio')
+              }}
               className={`flex-1 rounded-xl px-6 py-2.5 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-blue-600/15 sm:flex-none ${
                 pestana === opcion.id
                   ? 'bg-blue-700 text-white shadow-sm'
@@ -462,7 +482,7 @@ function PortalCliente({ usuario, alCerrarSesion }) {
           </section>
         ) : (
           <>
-        <section aria-labelledby="progreso-titulo" className="space-y-4">
+        <section id="mis-pedidos" aria-labelledby="progreso-titulo" className="scroll-mt-28 space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
@@ -477,7 +497,10 @@ function PortalCliente({ usuario, alCerrarSesion }) {
             </div>
             <button
               type="button"
-              onClick={() => setPestana('historial')}
+              onClick={() => {
+                setPestana('historial')
+                onHeaderSectionChange?.('historial')
+              }}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-blue-800 shadow-sm transition hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-600/15"
             >
               Ver historial{historial.length ? ` (${historial.length})` : ''}

@@ -35,7 +35,7 @@ const RUTAS = {
   pin: 'M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11Zm0-8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
 }
 
-function PanelRepartidor({ usuario, alCerrarSesion }) {
+function PanelRepartidor({ usuario, alCerrarSesion, onDisponibilidadChange }) {
   const [posicion, setPosicion] = useState(null)
   const [disponible, setDisponible] = useState(true)
   const [ofertas, setOfertas] = useState([])
@@ -57,6 +57,10 @@ function PanelRepartidor({ usuario, alCerrarSesion }) {
     disponibleRef.current = disponible
     ofertasRef.current = ofertas
   }, [posicion, disponible, ofertas])
+
+  useEffect(() => {
+    onDisponibilidadChange?.(disponible)
+  }, [disponible, onDisponibilidadChange])
 
   // Al iniciar sesión se toma la ubicación del dispositivo; si no hay permiso, se parte
   // del local y el repartidor puede mover su marcador en el mapa
@@ -280,7 +284,7 @@ const tarjeta = 'rounded-3xl border border-slate-200 bg-white shadow-sm shadow-s
 return (
   <main className="min-h-screen bg-slate-50 text-slate-900">
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-7 sm:px-8 sm:py-10">
-      <section className="relative isolate overflow-hidden rounded-3xl border border-white/10 text-white bg-gradient-to-br from-[#0B2A50] via-[#0A1E39] to-[#07172D] p-6 shadow-2xl shadow-blue-950/30 sm:p-9">
+      <section id="panel-repartidor" className="scroll-mt-28 relative isolate overflow-hidden rounded-3xl border border-white/10 text-white bg-gradient-to-br from-[#0B2A50] via-[#0A1E39] to-[#07172D] p-6 shadow-2xl shadow-blue-950/30 sm:p-9">
         <div className="absolute -right-16 -top-24 -z-10 h-72 w-72 rounded-full bg-blue-500/20 blur-3xl" />
         <div className="absolute -bottom-24 left-1/3 -z-10 h-56 w-56 rounded-full bg-cyan-400/10 blur-3xl" />
         <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
@@ -463,7 +467,7 @@ return (
             )}
           </section>
 
-          <section className={`${tarjeta} p-5 sm:p-6`}>
+          <section id="entregas-repartidor" className={`${tarjeta} scroll-mt-28 p-5 sm:p-6`}>
             <h2 className="text-lg font-bold tracking-tight text-slate-950">Mis entregas</h2>
 
             {entregas.length === 0 ? (

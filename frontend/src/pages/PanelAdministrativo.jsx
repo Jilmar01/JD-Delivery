@@ -331,7 +331,7 @@ function PanelAdministrativo({ usuario }) {
   const entregados = pedidos.filter((pedido) => pedido.estado === 'ENTREGADO')
   return (
     <main className="mx-auto max-w-7xl space-y-7 px-5 py-8 text-slate-900 sm:px-8 sm:py-10">
-      <section className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-r from-white via-white to-blue-50 p-6 shadow-sm sm:p-8">
+      <section id="dashboard-admin" className="scroll-mt-28 relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-r from-white via-white to-blue-50 p-6 shadow-sm sm:p-8">
         <div className="absolute -right-10 -top-16 h-48 w-48 rounded-full bg-blue-200/40 blur-3xl" />
         <div className="relative flex flex-wrap items-end justify-between gap-5">
           <div>
@@ -411,7 +411,7 @@ function PanelAdministrativo({ usuario }) {
         </p>
       )}
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+      <section id="pedidos-admin" className="scroll-mt-28 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-7">
           <div>
             <h3 className="text-lg font-bold text-slate-950 sm:text-xl">
