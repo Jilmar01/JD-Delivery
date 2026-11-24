@@ -16,7 +16,7 @@ const handleError = (res, error, operation) => {
 // POST /api/deliveries
 export async function createDelivery(req, res) {
   try {
-    const delivery = await deliveryService.createDelivery(req.body);
+    const delivery = await deliveryService.createDelivery(req.body, req.user);
 
     return successResponse(
       res,
@@ -32,7 +32,7 @@ export async function createDelivery(req, res) {
 // GET /api/deliveries
 export async function getAllDeliveries(req, res) {
   try {
-    const deliveries = await deliveryService.getAllDeliveries();
+    const deliveries = await deliveryService.getAllDeliveries(req.user);
 
     return successResponse(
       res,
@@ -50,7 +50,7 @@ export async function getAllDeliveries(req, res) {
 // GET /api/deliveries/:id
 export async function getDeliveryById(req, res) {
   try {
-    const delivery = await deliveryService.getDeliveryById(req.params.id);
+    const delivery = await deliveryService.getDeliveryById(req.params.id, req.user);
 
     return successResponse(
       res,
@@ -67,7 +67,8 @@ export async function assignCourier(req, res) {
   try {
     const delivery = await deliveryService.assignCourier(
       req.params.id,
-      req.body.courierId
+      req.body.courierId,
+      req.user
     );
 
     return successResponse(
@@ -86,7 +87,8 @@ export async function updateDeliveryStatus(req, res) {
     const delivery = await deliveryService.updateDeliveryStatus(
       req.params.id,
       req.body.status,
-      req.body.notes
+      req.body.notes,
+      req.user
     );
 
     return successResponse(
@@ -99,28 +101,12 @@ export async function updateDeliveryStatus(req, res) {
   }
 }
 
-// GET /api/deliveries/courier/:courierId
-export async function getDeliveriesByCourier(req, res) {
-  try {
-    const deliveries = await deliveryService.getDeliveriesByCourier(
-      req.params.courierId
-    );
-
-    return res.status(200).json({
-      success: true,
-      total: deliveries.length,
-      data: deliveries,
-    });
-  } catch (error) {
-    return handleError(res, error, "Error al consultar entregas del repartidor");
-  }
-}
-
 // GET /api/deliveries/order/:orderId
 export async function getDeliveryByOrder(req, res) {
   try {
     const delivery = await deliveryService.getDeliveryByOrder(
-      req.params.orderId
+      req.params.orderId,
+      req.user
     );
     
     return res.status(200).json({
@@ -147,7 +133,7 @@ export async function getDeliveryByOrder(req, res) {
 // GET /api/deliveries/:id/history
 export async function getDeliveryHistory(req, res) {
   try {
-    const history = await deliveryService.getDeliveryHistory(req.params.id);
+    const history = await deliveryService.getDeliveryHistory(req.params.id, req.user);
 
     return res.status(200).json({
       success: true,

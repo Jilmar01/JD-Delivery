@@ -9,5 +9,6 @@ const required = (name) => {
 export const env = {
   serviceName: process.env.SERVICE_NAME || 'delivery-service',
   port: Number(process.env.PORT) || 3002,
-  databaseUrl: required('DATABASE_URL')
+  databaseUrl: required('DATABASE_URL'),
+  jwtSecret: required('JWT_SECRET')
 };

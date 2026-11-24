@@ -1,7 +1,6 @@
-import net from 'net';
 import { prisma } from "../config/database.js";
 import { HttpError } from "../utils/HttpError.js";
-import { Socket } from 'dgram';
+import { ROLES } from "../constants/roles.js";
 
 const VALID_STATUSES = [
   "PENDING",
@@ -19,6 +18,21 @@ const STATUS_TRANSITIONS = {
   CANCELLED: [],
 };
 
+function requireRole(user, ...allowedRoles) {
+  if (!user || !allowedRoles.includes(user.role)) {
+    throw new HttpError("No tienes permisos para realizar esta acción", 403);
+  }
+}
+
+function requireCourierOwnership(delivery, user) {
+  if (
+    user?.role === ROLES.DELIVERY_PERSON &&
+    String(delivery.courierId) !== String(user.id)
+  ) {
+    throw new HttpError("No tienes permiso para acceder a esta entrega", 403);
+  }
+}
+
 function validatePositiveInteger(value, fieldName) {
   const number = Number(value);
 
@@ -30,7 +44,8 @@ function validatePositiveInteger(value, fieldName) {
 }
 
 // Crear entrega
-export async function createDelivery(data) {
+export async function createDelivery(data, user) {
+  requireRole(user, ROLES.ADMIN);
   const orderId = validatePositiveInteger(data.orderId, "orderId");
 
   if (
@@ -91,7 +106,8 @@ export async function createDelivery(data) {
 }
 
 // Consultar todas las entregas
-export async function getAllDeliveries() {
+export async function getAllDeliveries(user) {
+  requireRole(user, ROLES.ADMIN);
   return prisma.delivery.findMany({
     include: {
       history: {
@@ -105,7 +121,8 @@ export async function getAllDeliveries() {
 }
 
 // Consultar una entrega por ID
-export async function getDeliveryById(id) {
+export async function getDeliveryById(id, user) {
+  requireRole(user, ROLES.ADMIN, ROLES.DELIVERY_PERSON);
   const deliveryId = validatePositiveInteger(id, "id");
 
   const delivery = await prisma.delivery.findUnique({
@@ -121,11 +138,14 @@ export async function getDeliveryById(id) {
     throw new HttpError("Entrega no encontrada", 404);
   }
 
+  requireCourierOwnership(delivery, user);
+
   return delivery;
 }
 
 // Asignar o reasignar repartidor
-export async function assignCourier(id, courierId) {
+export async function assignCourier(id, courierId, user) {
+  requireRole(user, ROLES.ADMIN);
   const deliveryId = validatePositiveInteger(id, "id");
   const newCourierId = validatePositiveInteger(courierId, "courierId");
 
@@ -167,11 +187,19 @@ export async function assignCourier(id, courierId) {
 }
 
 // Cambiar estado de entrega
-export async function updateDeliveryStatus(id, newStatus, notes) {
+export async function updateDeliveryStatus(id, newStatus, notes, user) {
+  requireRole(user, ROLES.ADMIN, ROLES.DELIVERY_PERSON);
   const deliveryId = validatePositiveInteger(id, "id");
 
   if (typeof newStatus !== "string" || !VALID_STATUSES.includes(newStatus)) {
     throw new HttpError("El estado de entrega no es válido", 400);
+  }
+
+  if (
+    user.role === ROLES.DELIVERY_PERSON &&
+    !["IN_TRANSIT", "DELIVERED"].includes(newStatus)
+  ) {
+    throw new HttpError("El repartidor no puede establecer ese estado", 403);
   }
 
   if (notes !== undefined && notes !== null && typeof notes !== "string") {
@@ -186,6 +214,8 @@ export async function updateDeliveryStatus(id, newStatus, notes) {
     if (!delivery) {
       throw new HttpError("Entrega no encontrada", 404);
     }
+
+    requireCourierOwnership(delivery, user);
 
     if (delivery.status === newStatus) {
       throw new HttpError("La entrega ya tiene ese estado", 409);
@@ -229,8 +259,12 @@ export async function updateDeliveryStatus(id, newStatus, notes) {
 }
 
 // Consultar entregas por repartidor
-export async function getDeliveriesByCourier(courierId) {
-  const id = validatePositiveInteger(courierId, "courierId");
+export async function getDeliveriesByCourier(courierId, user) {
+  requireRole(user, ROLES.ADMIN, ROLES.DELIVERY_PERSON);
+  const requestedCourierId = user.role === ROLES.DELIVERY_PERSON
+    ? user.id
+    : courierId;
+  const id = validatePositiveInteger(requestedCourierId, "courierId");
 
   return prisma.delivery.findMany({
     where: { courierId: id },
@@ -240,7 +274,8 @@ export async function getDeliveriesByCourier(courierId) {
 }
 
 // Consultar entrega por pedido
-export async function getDeliveryByOrder(orderId) {
+export async function getDeliveryByOrder(orderId, user) {
+  requireRole(user, ROLES.ADMIN, ROLES.CUSTOMER);
   const id = validatePositiveInteger(orderId, "orderId");
 
   const delivery = await prisma.delivery.findFirst({
@@ -260,17 +295,20 @@ export async function getDeliveryByOrder(orderId) {
 }
 
 // Consultar historial
-export async function getDeliveryHistory(id) {
+export async function getDeliveryHistory(id, user) {
+  requireRole(user, ROLES.ADMIN, ROLES.DELIVERY_PERSON);
   const deliveryId = validatePositiveInteger(id, "id");
 
   const delivery = await prisma.delivery.findUnique({
     where: { id: deliveryId },
-    select: { id: true },
+    select: { id: true, courierId: true },
   });
 
   if (!delivery) {
     throw new HttpError("Entrega no encontrada", 404);
   }
+
+  requireCourierOwnership(delivery, user);
 
   return prisma.deliveryHistory.findMany({
     where: { deliveryId },
