@@ -16,7 +16,7 @@ const handleError = (res, error, operation) => {
 // POST /api/orders
 export const createOrder = async (req, res) => {
   try {
-    const order = await orderService.createOrder(req.body);
+    const order = await orderService.createOrder(req.body, req.user);
 
     return successResponse(
       res,
@@ -31,21 +31,8 @@ export const createOrder = async (req, res) => {
 
 // GET /api/orders
 export const getAllOrders = async (req, res) => {
-  
-  const { customerId, status } = req.query;
-
-  let filters = {};
-
-  if(customerId) {
-    filters.customerId = customerId;
-  }
-
-  if(status){
-    filters.status = status;
-  }
-  
   try {
-    const orders = await orderService.getAllOrders(filters);
+    const orders = await orderService.getAllOrders(req.query, req.user);
 
     return successResponse(
       res,
@@ -66,7 +53,7 @@ export const getAllOrders = async (req, res) => {
 // GET /api/orders/:id
 export const getOrderById = async (req, res) => {
   try {
-    const order = await orderService.getOrderById(req.params.id);
+    const order = await orderService.getOrderById(req.params.id, req.user);
 
     return successResponse(
       res,
@@ -85,7 +72,8 @@ export const updateOrderStatus = async (req, res) => {
 
     const order = await orderService.updateOrderStatus(
       req.params.id,
-      status
+      status,
+      req.user
     );
 
     return successResponse(
@@ -106,6 +94,7 @@ export const updateOrderStatus = async (req, res) => {
 export const getOffers = async (req, res) => {
   try {
     const orderId = Number(req.params.id);
+    await orderService.getOrderById(orderId, req.user);
     const offers = await orderService.getOffers(orderId);
 
     return successResponse(

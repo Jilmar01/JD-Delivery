@@ -4,6 +4,7 @@ import axios from "axios";
 import { HttpError } from "../utils/HttpError.js";
 import { createTcpClient } from "../server/tcp.client.js";
 import { env } from "../config/env.js";
+import { ROLES } from "../constants/roles.js";
 
 const transiciones = {
   PENDING: ["CONFIRMED", "CANCELLED"],
@@ -71,9 +72,8 @@ const validarItems = (items) => {
   return orderItems;
 };
 
-export const createOrder = async (orderData) => {
+export const createOrder = async (orderData, user) => {
   const {
-    customerId,
     deliveryAddress,
     deliveryLat,
     deliveryLng,
@@ -81,6 +81,13 @@ export const createOrder = async (orderData) => {
     total,
     items,
   } = orderData;
+  const customerId = user?.role === ROLES.CUSTOMER
+    ? String(user.id)
+    : orderData.customerId;
+
+  if (![ROLES.ADMIN, ROLES.CUSTOMER].includes(user?.role)) {
+    throw new HttpError("No tienes permisos para crear pedidos", 403);
+  }
 
   if (
     typeof customerId !== "string" ||
@@ -206,8 +213,21 @@ export const createOrder = async (orderData) => {
   return order;
 };
 
-export const getAllOrders = async (filters = {}) => {
+export const getAllOrders = async (filters = {}, user) => {
+  if (![ROLES.ADMIN, ROLES.CUSTOMER].includes(user?.role)) {
+    throw new HttpError("No tienes permisos para consultar pedidos", 403);
+  }
+
   const where = {};
+
+  if (user.role === ROLES.CUSTOMER) {
+    where.customerId = String(user.id);
+  } else if (filters.customerId !== undefined && filters.customerId !== "") {
+    if (typeof filters.customerId !== "string" || !filters.customerId.trim()) {
+      throw new HttpError("El cliente proporcionado no es válido", 400);
+    }
+    where.customerId = filters.customerId;
+  }
 
   if (filters.status !== undefined) {
     if (typeof filters.status !== "string") {
@@ -233,7 +253,7 @@ export const getAllOrders = async (filters = {}) => {
   });
 };
 
-export const getOrderById = async (idParam) => {
+export const getOrderById = async (idParam, user) => {
   const id = validarId(idParam);
 
   const order = await prisma.order.findUnique({
@@ -247,11 +267,32 @@ export const getOrderById = async (idParam) => {
     throw new HttpError("Pedido no encontrado", 404);
   }
 
+  if (user?.role === ROLES.CUSTOMER && order.customerId !== String(user.id)) {
+    throw new HttpError("No tienes permiso para consultar este pedido", 403);
+  }
+
+  if (![ROLES.ADMIN, ROLES.CUSTOMER].includes(user?.role)) {
+    throw new HttpError("No tienes permisos para consultar pedidos", 403);
+  }
+
   return order;
 };
 
+export const deleteOrder = async (idParam) => {
+  const id = validarId(idParam);
 
-export const updateOrderStatus = async (idParam, status) => {
+  try {
+    return await prisma.order.delete({ where: { id } });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      throw new HttpError("Pedido no encontrado", 404);
+    }
+    throw error;
+  }
+};
+
+
+export const updateOrderStatus = async (idParam, status, user) => {
   const id = validarId(idParam);
   const nextStatus = typeof status === "string"
     ? status.toUpperCase()
@@ -264,6 +305,14 @@ export const updateOrderStatus = async (idParam, status) => {
     throw new HttpError("El estado proporcionado no es válido", 400);
   }
 
+  if (![ROLES.ADMIN, ROLES.CUSTOMER].includes(user?.role)) {
+    throw new HttpError("No tienes permisos para actualizar pedidos", 403);
+  }
+
+  if (user.role === ROLES.CUSTOMER && nextStatus !== "CANCELLED") {
+    throw new HttpError("El cliente solamente puede cancelar su pedido", 403);
+  }
+
   const updatedOrder = await prisma.$transaction(async (tx) => {
     const pedido = await tx.order.findUnique({
       where: { id },
@@ -271,6 +320,13 @@ export const updateOrderStatus = async (idParam, status) => {
 
     if (!pedido) {
       throw new HttpError("Pedido no encontrado", 404);
+    }
+
+    if (
+      user.role === ROLES.CUSTOMER &&
+      pedido.customerId !== String(user.id)
+    ) {
+      throw new HttpError("No tienes permiso para modificar este pedido", 403);
     }
 
     if (!transiciones[pedido.status]) {
