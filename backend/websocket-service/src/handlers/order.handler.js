@@ -1,11 +1,7 @@
 import { createOrderStatusService } from '../services/order-status.service.js';
 import { savePendingOrderSearch } from '../stores/pending-order-search.store.js';
 import { TCP_EVENTS } from '../protocols/message.types.js';
-
-const serviceHeaders = (internalToken) => ({
-  'Content-Type': 'application/json',
-  Authorization: `Bearer ${internalToken}`
-});
+import { createInternalHeaders } from '../services/jwt.service.js';
 
 const readServiceResponse = async (response, defaultMessage) => {
   const result = await response.json().catch(() => null);
@@ -28,7 +24,7 @@ export const createOrderHandler = ({
     const orderId = Number(payload?.orderId);
     if (!Number.isSafeInteger(orderId) || orderId <= 0) return;
 
-    const headers = serviceHeaders(env.internalServiceToken);
+    const headers = createInternalHeaders();
     let order = null;
     let delivery = null;
 
@@ -109,7 +105,7 @@ export const createOrderHandler = ({
     try {
       const response = await fetch(
         `${env.orderServiceUrl}/api/orders/${orderId}`,
-        { headers: serviceHeaders(env.internalServiceToken) }
+        { headers: createInternalHeaders() }
       );
       const order = await readServiceResponse(
         response,
@@ -128,7 +124,7 @@ export const createOrderHandler = ({
     try {
       const response = await fetch(
         `${env.orderServiceUrl}/api/orders/${orderId}`,
-        { headers: serviceHeaders(env.internalServiceToken) }
+        { headers: createInternalHeaders() }
       );
       const order = await readServiceResponse(
         response,
@@ -162,7 +158,7 @@ export const createOrderHandler = ({
     try {
       const response = await fetch(
         `${env.orderServiceUrl}/api/orders/${orderId}`,
-        { headers: serviceHeaders(env.internalServiceToken) }
+        { headers: createInternalHeaders() }
       );
       const order = await readServiceResponse(
         response,
@@ -187,7 +183,7 @@ export const createOrderHandler = ({
   const handleOfferAccepted = async (payload) => {
     const orderId = Number(payload.orderId);
     const driverId = String(payload.driverId);
-    const headers = serviceHeaders(env.internalServiceToken);
+    const headers = createInternalHeaders();
 
     try {
       const orderResponse = await fetch(

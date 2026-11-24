@@ -2,6 +2,7 @@ import {
   getPendingOrderSearches,
   removePendingOrderSearch
 } from '../stores/pending-order-search.store.js';
+import { createInternalHeaders } from '../services/jwt.service.js';
 
 export const createCustomerHandler = ({ socketStore, tcpClient, env }) => {
   const handleConnection = (socket) => {
@@ -34,9 +35,7 @@ export const createCustomerHandler = ({ socketStore, tcpClient, env }) => {
         const response = await fetch(
           `${env.orderServiceUrl}/api/orders/${orderId}`,
           {
-            headers: {
-              Authorization: `Bearer ${env.internalServiceToken}`
-            }
+            headers: createInternalHeaders({ id: userId, role: 'CUSTOMER' })
           }
         );
         const result = await response.json().catch(() => null);

@@ -1,4 +1,5 @@
 import { HttpError } from '../utils/HttpError.js';
+import { createInternalHeaders } from './jwt.service.js';
 
 const ESTADOS_PEDIDO = [
   'PENDING',
@@ -7,11 +8,6 @@ const ESTADOS_PEDIDO = [
   'IN_TRANSIT',
   'DELIVERED'
 ];
-
-const serviceHeaders = (internalToken) => ({
-  'Content-Type': 'application/json',
-  Authorization: `Bearer ${internalToken}`
-});
 
 const readResponse = async (response, message) => {
   const result = await response.json().catch(() => null);
@@ -33,7 +29,7 @@ export const createOrderStatusService = (env) => {
       throw new HttpError(`Estado de pedido no válido: ${targetStatus}`, 400);
     }
 
-    const headers = serviceHeaders(env.internalServiceToken);
+    const headers = createInternalHeaders();
     const response = await fetch(
       `${env.orderServiceUrl}/api/orders/${orderId}`,
       { headers }

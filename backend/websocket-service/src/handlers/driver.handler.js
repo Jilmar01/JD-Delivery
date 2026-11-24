@@ -6,6 +6,7 @@ import {
 
 import { env } from '../config/env.js';
 import { createOrderStatusService } from '../services/order-status.service.js';
+import { createInternalHeaders } from '../services/jwt.service.js';
 
 export const createDriverHandler = ({
   tcpClient,
@@ -36,15 +37,16 @@ export const createDriverHandler = ({
         throw new Error('Los datos de actualización no son válidos');
       }
 
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.internalServiceToken}`
-      };
+      const deliveryHeaders = createInternalHeaders({
+        id: userId,
+        role: 'DELIVERY_PERSON'
+      });
+      const orderHeaders = createInternalHeaders();
 
       // Consultar la entrega
       const response = await fetch(
         `${env.deliveryServiceUrl}/api/deliveries/${deliveryId}`,
-        { headers }
+        { headers: deliveryHeaders }
       );
 
       const result = await response.json().catch(() => null);
@@ -63,7 +65,7 @@ export const createDriverHandler = ({
       // Obtener el cliente antes de persistir para no dejar el cambio sin notificar.
       const orderResponse = await fetch(
         `${env.orderServiceUrl}/api/orders/${delivery.orderId}`,
-        { headers }
+        { headers: orderHeaders }
       );
       const orderResult = await orderResponse.json().catch(() => null);
 
@@ -76,7 +78,7 @@ export const createDriverHandler = ({
         `${env.deliveryServiceUrl}/api/deliveries/${deliveryId}/status`,
         {
           method: 'PATCH',
-          headers,
+          headers: deliveryHeaders,
           body: JSON.stringify({
             status: data.status,
             notes: data.notes

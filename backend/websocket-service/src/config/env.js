@@ -17,7 +17,6 @@ export const env = {
   port: Number(process.env.PORT || 4321),
   frontendUrl: withDefault('FRONTEND_URL', 'http://localhost:5173'),
   jwtSecret: required('JWT_SECRET'),
-  internalServiceToken: required('INTERNAL_SERVICE_TOKEN'),
   deliveryServiceUrl: required('DELIVERY_SERVICE_URL'),
   orderServiceUrl: withDefault('ORDER_SERVICE_URL', 'http://localhost:3001'),
   socketServiceUrl: required('SOCKET_SERVICE_URL')
